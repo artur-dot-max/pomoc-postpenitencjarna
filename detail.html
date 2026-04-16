@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Karta osoby uprawnionej</title>
+    <script>
+      (() => {
+        try {
+          const raw = sessionStorage.getItem("sessionUser");
+          if (!raw) {
+            window.location.replace("/login.html");
+            return;
+          }
+          JSON.parse(raw);
+        } catch {
+          window.location.replace("/login.html");
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="page">
+      <nav class="top-nav">
+        <span class="app-name">pomoc-postpenitencjarna</span>
+      </nav>
+
+      <section class="detail-view" id="detail-view">
+          <div class="detail-header">
+          <a class="btn ghost" href="index.html">← Wróć do listy</a>
+            <div>
+            <h2 class="detail-title">Karta osoby uprawnionej</h2>
+            <p class="detail-name" id="detail-name">Imię i nazwisko</p>
+            <p class="section-hint" id="detail-meta">Szczegóły wpisu</p>
+            <p class="section-hint" id="detail-pesel">PESEL</p>
+            <p class="section-hint" id="detail-support-deadline">Okres udzielania pomocy kończy się dnia: -</p>
+            </div>
+          <div class="hero-card hero-logo">
+          <img src="/src/assets/fundusz-sprawiedliwosci.png" alt="Fundusz Sprawiedliwości" />
+        </div> 
+        
+        </div>
+
+        <div class="detail-grid">
+          <div class="detail-card">
+            <div class="detail-card-header">
+              <h3>Dane podstawowe</h3>
+            </div>
+            <div class="detail-list" id="detail-basic"></div>
+          </div>
+          <div class="detail-card">
+            <div class="detail-card-header">
+              <h3>Dane sprawy</h3>
+              <button type="button" class="btn ghost edit-person">Edytuj dane</button>
+            </div>
+            <div class="detail-list" id="detail-case"></div>
+          </div>
+        </div>
+
+        <div class="detail-card table-card">
+          <div class="table-header">
+            <h3>Udzielona pomoc</h3>
+            <button type="button" class="btn ghost" id="add-help">Dodaj wpis</button>
+          </div>
+          <div class="help-filters">
+            <label class="field" style="max-width: 240px">
+              <span>Pokaż pomoc</span>
+              <select id="help-filter-mode">
+                <option value="all">Za cały okres</option>
+                <option value="month">Dany miesiąc</option>
+              </select>
+            </label>
+            <label class="field" id="help-filter-month-field" style="max-width: 220px" hidden>
+              <span>Miesiąc</span>
+              <input type="month" id="help-filter-month" />
+            </label>
+          </div>
+          <div class="table">
+            <div class="table-head">
+              <span>Data</span>
+              <span>Rodzaj wsparcia</span>
+              <span>Kwota</span>
+              <span>Ilość</span>
+              <span>Suma</span>
+              <span>Osoba udzielająca</span>
+              <span>Akcje</span>
+            </div>
+            <div class="table-body" id="help-table">
+              <div class="table-row muted">
+                <span>Brak wpisów</span>
+                <span>-</span>
+                <span>-</span>
+                <span>-</span>
+                <span>-</span>
+                <span>-</span>
+                <span>-</span>
+              </div>
+            </div>
+            <div class="table-summary" id="help-summary">
+              <span>Razem</span>
+              <span id="help-total">0,00 PLN</span>
+            </div>
+          </div>
+        </div>
+
+        <form class="form-card" id="help-form" hidden>
+          <input type="hidden" name="help_id" />
+          <div class="section-header">
+            <h2>Dodaj wpis pomocy</h2>
+            <p class="section-hint">Uzupełnij dane udzielonego wsparcia.</p>
+          </div>
+
+          <div class="grid">
+            <label class="field">
+              <span>Data udzielonej pomocy</span>
+              <input type="date" name="help_date" />
+            </label>
+            <label class="field">
+              <span>Rodzaj wsparcia</span>
+              <select name="help_type">
+                <option value="">Wybierz</option>
+                <option value="1">1) pokrywanie kosztów czasowego zakwaterowania lub udzielanie schronienia w ośrodku dla bezdomnych;</option>
+                <option value="2">2) okresową dopłatę do bieżących zobowiązań czynszowych i opłat za energię cieplną, energię elektryczną, gaz, wodę, opał, odbiór nieczystości stałych i płynnych za lokal mieszkalny lub dom jednorodzinny, do którego osoba uprawniona posiada tytuł prawny, proporcjonalnie do liczby osób stale zamieszkujących w tym lokalu lub domu;</option>
+                <option value="3">3) organizowanie i finansowanie poradnictwa prawnego, promocji zatrudnienia i aktywizacji zawodowej;</option>
+                <option value="4">4) organizowanie i finansowanie szkoleń i kursów podnoszących kwalifikacje zawodowe oraz pokrywanie kosztów egzaminów potwierdzających kwalifikacje zawodowe;</option>
+                <option value="5">5) organizowanie i finansowanie programów podnoszących kompetencje społeczne, mających na celu przeciwdziałanie czynnikom kryminogennym, a zwłaszcza agresji i przemocy, w tym przemocy w rodzinie, oraz problemom uzależnień;</option>
+                <option value="6">6) zakup materiałów, narzędzi, wyposażenia oraz urządzeń niezbędnych do realizacji programów, o których mowa w pkt 5, oraz szkoleń i kursów podnoszących kwalifikacje zawodowe, a także wykonywania pracy nieodpłatnej;</option>
+                <option value="7">7) pokrywanie kosztów związanych ze specjalistycznym leczeniem lub rehabilitacją leczniczą oraz uzyskiwaniem orzeczeń o niepełnosprawności, stopniu niepełnosprawności lub niezdolności do pracy;</option>
+                <option value="8">8) pokrywanie kosztów transportu specjalnego, zgodnie ze wskazaniami lekarskimi, lub przejazdów do miejsca pobytu, nauki, terapii, pracy, zwłaszcza wykonywanej nieodpłatnie;</option>
+                <option value="9">9) pokrywanie kosztów związanych z uzyskaniem dowodu osobistego oraz innych dokumentów niezbędnych do uzyskania pomocy;</option>
+                <option value="10">10) pokrywanie kosztów badań specjalistycznych wymaganych przy kwalifikowaniu do udziału w programach, o których mowa w pkt 5, szkoleniach i kursach podnoszących kwalifikacje zawodowe oraz pracy wykonywanej nieodpłatnie;</option>
+                <option value="11">11) pokrywanie kosztów grupowego ubezpieczenia od następstw nieszczęśliwych wypadków osób zakwalifikowanych do udziału w szkoleniach i kursach podnoszących kwalifikacje zawodowe, programach, o których mowa w pkt 5, oraz pracy wykonywanej nieodpłatnie;</option>
+                <option value="12">12) promowanie i wspieranie inicjatyw i przedsięwzięć służących skutecznej readaptacji skazanych, działań o charakterze edukacyjnym i informacyjnym, organizowanie i prowadzenie szkoleń, organizowanie i zlecanie badań naukowych dotyczących sytuacji osób skazanych;</option>
+                <option value="13a">13a) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie żywności lub bonów żywnościowych,</option>
+                <option value="13b">13b) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie odzieży, bielizny, obuwia, środków czystości i higieny osobistej lub bonów towarowych,</option>
+                <option value="13c">13c) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie biletów komunikacji publicznej,</option>
+                <option value="13d">13d) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie leków, środków opatrunkowych i sanitarnych,</option>
+                <option value="13e">13e) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie wyrobów medycznych, w tym protez, przedmiotów ortopedycznych i środków pomocniczych,</option>
+                <option value="13f">13f) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie pomocy naukowych, dydaktycznych, książek i materiałów biurowych,</option>
+                <option value="13g">13g) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie niezbędnych przedmiotów wyposażenia domowego lub innych przedmiotów użytku osobistego ułatwiających funkcjonowanie społeczne w miejscu zamieszkania lub pobytu, zwłaszcza osób niepełnosprawnych,</option>
+                <option value="13h">13h) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie materiałów, narzędzi i wyposażenia niezbędnego do uczestnictwa w szkoleniu zawodowym, wykonywania wyuczonego zawodu albo prowadzenia działalności gospodarczej na własny rachunek</option>
+                <option value="14">14) udzielanie świadczeń pieniężnych na cel wskazany przez organ lub podmiot udzielający pomocy</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Kwota</span>
+              <input type="number" step="0.01" name="help_amount" placeholder="PLN" />
+            </label>
+            <label class="field">
+              <span>Ilość</span>
+              <input type="number" step="1" name="help_quantity" placeholder="np. 1" />
+            </label>
+            <label class="field">
+              <span>Osoba udzielająca</span>
+              <select name="help_provider">
+                <option value="">Wybierz</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="btn ghost" id="cancel-help">Anuluj</button>
+            <button type="submit" class="btn primary">Dodaj wpis</button>
+          </div>
+        </form>
+
+        <form class="form-card" id="edit-form" hidden>
+          <div class="section-header">
+            <h2>Edytuj dane osoby</h2>
+            <p class="section-hint">Zapisz zmiany, aby zaktualizować dane w widoku.</p>
+          </div>
+
+          <div class="grid">
+            <label class="field">
+              <span>Nr wniosku</span>
+              <input type="text" name="request_number" />
+            </label>
+            <label class="field">
+              <span>Data wniosku</span>
+              <input type="date" name="request_date" />
+            </label>
+            <label class="field">
+              <span>Oznaczenie osoby uprawnionej</span>
+              <select name="eligible_person_designation">
+                <option value="">Wybierz</option>
+                <option value="ZWOLNIONA">Osoba zwolniona z zakładu karnego/aresztu śledczego</option>
+                <option value="POZBAWIONA_LUB_ZWALNIANA">Osoba pozbawiona wolności lub zwalniana z zakładu karnego/aresztu śledczego</option>
+                <option value="NAJBLIZSZA_POZBAWIONEJ">Osoba najbliższa osobie pozbawionej wolności</option>
+                <option value="NAJBLIZSZA_ZWOLNIONEJ">Osoba najbliższa osobie zwolnionej z zakładu karnego/aresztu śledczego</option>
+              </select>
+            </label>
+            <label class="field field-checkbox" id="edit-assistance-extension-field" hidden>
+              <span>Czy jest zgoda na przedłużenie pomocy do 12 miesięcy</span>
+              <label class="toggle">
+                <input type="checkbox" name="assistance_extension_approved" />
+                <span class="toggle-ui"></span>
+                <span class="toggle-text" aria-live="polite"></span>
+              </label>
+            </label>
+            <label class="field field-checkbox">
+              <span>Czy udzielono pomocy korespondencyjnej</span>
+              <label class="toggle">
+                <input type="checkbox" name="correspondence_assistance" />
+                <span class="toggle-ui"></span>
+                <span class="toggle-text" aria-live="polite"></span>
+              </label>
+            </label>
+            <label class="field">
+              <span>Imię</span>
+              <input type="text" name="first_name" />
+            </label>
+            <label class="field">
+              <span>Nazwisko</span>
+              <input type="text" name="last_name" />
+            </label>
+            <label class="field">
+              <span>Obywatelstwo</span>
+              <select name="citizenship">
+                <option value="">Wybierz</option>
+                <option value="POLSKIE">Polskie</option>
+                <option value="UKRAINSKIE">Ukraińskie</option>
+                <option value="BIALORUSKIE">Białoruskie</option>
+                <option value="NIEMIECKIE">Niemieckie</option>
+                <option value="ROSYJSKIE">Rosyjskie</option>
+                <option value="WIETNAMSKIE">Wietnamskie</option>
+                <option value="INDYJSKIE">Indyjskie</option>
+                <option value="GRUZINSKIE">Gruzińskie</option>
+                <option value="RUMUNSKIE">Rumuńskie</option>
+                <option value="BRYTYJSKIE">Brytyjskie</option>
+                <option value="INNE">Inne</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>PESEL</span>
+              <input type="text" name="pesel" />
+            </label>
+            <label class="field">
+              <span>Data urodzenia</span>
+              <input type="date" name="birth_date" />
+            </label>
+            <label class="field">
+              <span>Nr telefonu</span>
+              <input type="tel" name="phone" />
+            </label>
+            <label class="field">
+              <span>Email</span>
+              <input type="email" name="email" />
+            </label>
+            <label class="field">
+              <span>Płeć</span>
+              <select name="gender">
+                <option value="">Wybierz</option>
+                <option value="K">K</option>
+                <option value="M">M</option>
+                <option value="INNE">Inne</option>
+                <option value="NIE_PODANO">Nie podano</option>
+              </select>
+            </label>
+            <label class="field field-checkbox">
+              <span>Status UKR</span>
+              <label class="toggle">
+                <input type="checkbox" name="ukr_status" />
+                <span class="toggle-ui"></span>
+                <span class="toggle-text" aria-live="polite"></span>
+              </label>
+            </label>
+            <label class="field field-full-row">
+              <span>Adres</span>
+              <textarea name="address" rows="3"></textarea>
+            </label>
+            <label class="field">
+              <span>Dokument potwierdzający tożsamość</span>
+              <input type="text" name="identity_document" />
+            </label>
+            <label class="field">
+              <span>Stan cywilny</span>
+              <select name="marital_status">
+                <option value="">Wybierz</option>
+                <option value="PANNA_KAWALER">Panna / Kawaler</option>
+                <option value="MALZENSTWO">Małżeństwo</option>
+                <option value="ROZWOD">Rozwód</option>
+                <option value="WDOWIEC_WDOWA">Wdowiec / Wdowa</option>
+                <option value="SEPARACJA">Separacja</option>
+                <option value="NIE_PODANO">Nie podano</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Niepełnosprawność</span>
+              <select name="disability">
+                <option value="">Wybierz</option>
+                <option value="Tak">Tak</option>
+                <option value="Nie">Nie</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Wysokość środków posiadanych w dniu zwolnienia</span>
+              <input type="number" step="0.01" name="funds_on_release" />
+            </label>
+            <label class="field">
+              <span>Zakład karny / areszt śledczy</span>
+              <select name="detention_facility">
+                <option value="">Wybierz</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Bydgoszczy">Okręgowy Inspektorat Służby Więziennej w Bydgoszczy</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Katowicach">Okręgowy Inspektorat Służby Więziennej w Katowicach</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Koszalinie">Okręgowy Inspektorat Służby Więziennej w Koszalinie</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Krakowie">Okręgowy Inspektorat Służby Więziennej w Krakowie</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Lublinie">Okręgowy Inspektorat Służby Więziennej w Lublinie</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Łodzi">Okręgowy Inspektorat Służby Więziennej w Łodzi</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Olsztynie">Okręgowy Inspektorat Służby Więziennej w Olsztynie</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Opolu">Okręgowy Inspektorat Służby Więziennej w Opolu</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Poznaniu">Okręgowy Inspektorat Służby Więziennej w Poznaniu</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Rzeszowie">Okręgowy Inspektorat Służby Więziennej w Rzeszowie</option>
+                <option value="Okręgowy Inspektorat Służby Więziennej w Warszawie">Okręgowy Inspektorat Służby Więziennej w Warszawie</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Data osadzenia</span>
+              <input type="date" name="incarceration_date" />
+            </label>
+            <label class="field">
+              <span>Data zwolnienia</span>
+              <input type="date" name="release_date" />
+            </label>
+            <label class="field">
+              <span>Źródło informacji o pomocy</span>
+              <select name="info_source">
+                <option value="">Wybierz</option>
+                <option value="Od kuratora sądowego">Od kuratora sądowego</option>
+                <option value="Od organizacji pozarządowej">Od organizacji pozarządowej</option>
+                <option value="Z internetu">Z internetu</option>
+                <option value="Od rodziny">Od rodziny</option>
+                <option value="Od znajomych">Od znajomych</option>
+                <option value="Z instytucji publicznej">Z instytucji publicznej</option>
+                <option value="Z gazety">Z gazety</option>
+                <option value="Od wychowawcy w jednostce penitencjarnej">Od wychowawcy w jednostce penitencjarnej</option>
+                <option value="Inne źródła wiedzy">Inne źródła wiedzy</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Uwagi</span>
+              <textarea name="assistance_needed" rows="3"></textarea>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="btn ghost" id="cancel-edit">Anuluj</button>
+            <button type="submit" class="btn primary">Zapisz zmiany</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

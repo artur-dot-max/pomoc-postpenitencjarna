@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dodaj nową osobę</title>
+    <script>
+      (() => {
+        try {
+          const raw = sessionStorage.getItem("sessionUser");
+          if (!raw) {
+            window.location.replace("/login.html");
+            return;
+          }
+          JSON.parse(raw);
+        } catch {
+          window.location.replace("/login.html");
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="page">
+      <nav class="top-nav">
+        <span class="app-name">Wykaz osób - Pomoc Postpenitencjarna</span>
+        <div class="nav-actions">
+          <a class="btn ghost" id="nav-org" href="organization.html">Dane organizacji</a>
+          <button type="button" class="btn ghost" id="nav-staff">Pracownicy</button>
+          <button type="button" class="btn ghost" id="nav-reports">Raporty</button>
+          <button type="button" class="btn ghost" id="nav-logout">Wyloguj</button>
+          <button type="button" class="btn ghost" id="nav-exit">Zamknij program</button>
+        </div>
+      </nav>
+      <section class="hero">
+        <div class="hero-content">
+          <p class="eyebrow">Pomoc postpenitencjarna</p>
+          <h1>Wykaz osób - Pomoc Postpenitencjarna</h1>
+          <p class="subtitle">
+            Program służy do ewidencji osób pomocy postpenitencjarnej oraz rejestrowania i raportowania udzielonej pomocy.
+          </p>
+        </div>
+        <div class="hero-card hero-logo">
+          <div class="monthly-reminder" id="monthly-reminder" hidden>
+            Przypomnienie: w dniach 5-10 kazdego miesiaca nalezy przeslac miesieczny wykaz osob do Ministerstwa.
+          </div>
+          <img src="/src/assets/fundusz-sprawiedliwosci.png" alt="Fundusz Sprawiedliwości" />
+        </div>
+      </section>
+
+      <section class="accordion">
+        <button type="button" class="accordion-toggle" id="toggle-person-form">
+          <span>Dane osoby uprawnionej</span>
+          <span class="accordion-meta">Kliknij, aby rozwinąć</span>
+        </button>
+        <div class="accordion-panel" id="person-panel" hidden>
+          <form class="form-card" id="person-form">
+          <div class="section-header">
+            <h2>Dane osoby uprawnionej</h2>
+            <p class="section-hint">
+              Pola oznaczone * są wymagane.
+            </p>
+          </div>
+
+          <div class="grid">
+          <label class="field">
+            <span>Nr wniosku</span>
+            <input type="text" name="request_number" placeholder="Nr wniosku" />
+          </label>
+          <label class="field">
+            <span>Data wniosku *</span>
+            <input type="date" name="request_date" />
+          </label>
+          <label class="field">
+            <span>Oznaczenie osoby uprawnionej *</span>
+            <select name="eligible_person_designation">
+              <option value="">Wybierz</option>
+              <option value="ZWOLNIONA">Osoba zwolniona z zakładu karnego/aresztu śledczego</option>
+              <option value="POZBAWIONA_LUB_ZWALNIANA">Osoba pozbawiona wolności lub zwalniana z zakładu karnego/aresztu śledczego</option>
+              <option value="NAJBLIZSZA_POZBAWIONEJ">Osoba najbliższa osobie pozbawionej wolności</option>
+              <option value="NAJBLIZSZA_ZWOLNIONEJ">Osoba najbliższa osobie zwolnionej z zakładu karnego/aresztu śledczego</option>
+            </select>
+          </label>
+          <label class="field field-checkbox" id="assistance-extension-field" hidden>
+            <span>Czy jest zgoda na przedłużenie pomocy do 12 miesięcy</span>
+            <label class="toggle">
+              <input type="checkbox" name="assistance_extension_approved" />
+              <span class="toggle-ui"></span>
+              <span class="toggle-text" aria-live="polite"></span>
+            </label>
+          </label>
+          <label class="field field-checkbox">
+            <span>Czy udzielono pomocy korespondencyjnej</span>
+            <label class="toggle">
+              <input type="checkbox" name="correspondence_assistance" />
+              <span class="toggle-ui"></span>
+              <span class="toggle-text" aria-live="polite"></span>
+            </label>
+          </label>
+          <label class="field field-start-row">
+            <span>Imię *</span>
+            <input type="text" name="first_name" placeholder="Imię" />
+          </label>
+          <label class="field">
+            <span>Nazwisko *</span>
+            <input type="text" name="last_name" placeholder="Nazwisko" />
+          </label>
+          <label class="field">
+            <span>Obywatelstwo *</span>
+            <select name="citizenship">
+              <option value="">Wybierz</option>
+              <option value="POLSKIE">Polskie</option>
+              <option value="UKRAINSKIE">Ukraińskie</option>
+              <option value="BIALORUSKIE">Białoruskie</option>
+              <option value="NIEMIECKIE">Niemieckie</option>
+              <option value="ROSYJSKIE">Rosyjskie</option>
+              <option value="WIETNAMSKIE">Wietnamskie</option>
+              <option value="INDYJSKIE">Indyjskie</option>
+              <option value="GRUZINSKIE">Gruzińskie</option>
+              <option value="RUMUNSKIE">Rumuńskie</option>
+              <option value="BRYTYJSKIE">Brytyjskie</option>
+              <option value="INNE">Inne</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>PESEL</span>
+            <input type="text" name="pesel" placeholder="11 cyfr" />
+          </label>
+          <label class="field field-checkbox">
+            <span>Status UKR</span>
+            <label class="toggle">
+              <input type="checkbox" name="ukr_status" />
+              <span class="toggle-ui"></span>
+              <span class="toggle-text" aria-live="polite"></span>
+            </label>
+          </label>
+          <label class="field">
+            <span>Dokument potwierdzający tożsamość</span>
+            <input type="text" name="identity_document" placeholder="Wpisać w przypadku braku numeru PESEL" />
+          </label>
+          <label class="field">
+            <span>Data urodzenia</span>
+            <input type="date" name="birth_date" />
+          </label>
+          <label class="field">
+            <span>Nr telefonu</span>
+            <input type="tel" name="phone" placeholder="+48 ..." />
+          </label>
+          <label class="field">
+            <span>Email</span>
+            <input type="email" name="email" placeholder="adres@example.com" />
+          </label>
+          <label class="field">
+            <span>Płeć *</span>
+            <select name="gender">
+              <option value="">Wybierz</option>
+              <option value="K">Kobieta</option>
+              <option value="M">Mężczyzna</option>
+              <option value="INNE">Inne</option>
+              <option value="NIE_PODANO">Nie podano</option>
+            </select>
+          </label>
+          <label class="field field-full-row">
+            <span>Adres *</span>
+            <textarea name="address" rows="3" placeholder="Ulica, kod, miasto"></textarea>
+          </label>
+          <label class="field">
+            <span>Stan cywilny *</span>
+            <select name="marital_status">
+              <option value="">Wybierz</option>
+              <option value="PANNA_KAWALER">Panna / Kawaler</option>
+              <option value="MALZENSTWO">Małżeństwo</option>
+              <option value="ROZWOD">Rozwód</option>
+              <option value="WDOWIEC_WDOWA">Wdowiec / Wdowa</option>
+              <option value="SEPARACJA">Separacja</option>
+              <option value="NIE_PODANO">Nie podano</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Niepełnosprawność *</span>
+            <select name="disability">
+              <option value="">Wybierz</option>
+              <option value="Tak">Tak</option>
+              <option value="Nie">Nie</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Wysokość środków posiadanych w dniu zwolnienia</span>
+            <input type="number" step="0.01" name="funds_on_release" placeholder="PLN" />
+          </label>
+          <label class="field">
+            <span>Zakład karny / areszt śledczy *</span>
+            <select name="detention_facility">
+              <option value="">Wybierz</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Bydgoszczy">Okręgowy Inspektorat Służby Więziennej w Bydgoszczy</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Katowicach">Okręgowy Inspektorat Służby Więziennej w Katowicach</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Koszalinie">Okręgowy Inspektorat Służby Więziennej w Koszalinie</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Krakowie">Okręgowy Inspektorat Służby Więziennej w Krakowie</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Lublinie">Okręgowy Inspektorat Służby Więziennej w Lublinie</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Łodzi">Okręgowy Inspektorat Służby Więziennej w Łodzi</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Olsztynie">Okręgowy Inspektorat Służby Więziennej w Olsztynie</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Opolu">Okręgowy Inspektorat Służby Więziennej w Opolu</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Poznaniu">Okręgowy Inspektorat Służby Więziennej w Poznaniu</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Rzeszowie">Okręgowy Inspektorat Służby Więziennej w Rzeszowie</option>
+              <option value="Okręgowy Inspektorat Służby Więziennej w Warszawie">Okręgowy Inspektorat Służby Więziennej w Warszawie</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Data osadzenia *</span>
+            <input type="date" name="incarceration_date" />
+          </label>
+          <label class="field">
+            <span>Data zwolnienia</span>
+            <input type="date" name="release_date" />
+          </label>
+          <label class="field">
+            <span>Źródło informacji o pomocy</span>
+            <select name="info_source">
+              <option value="">Wybierz</option>
+              <option value="Od kuratora sądowego">Od kuratora sądowego</option>
+              <option value="Od organizacji pozarządowej">Od organizacji pozarządowej</option>
+              <option value="Z internetu">Z internetu</option>
+              <option value="Od rodziny">Od rodziny</option>
+              <option value="Od znajomych">Od znajomych</option>
+              <option value="Z instytucji publicznej">Z instytucji publicznej</option>
+              <option value="Z gazety">Z gazety</option>
+              <option value="Od wychowawcy w jednostce penitencjarnej">Od wychowawcy w jednostce penitencjarnej</option>
+              <option value="Inne źródła wiedzy">Inne źródła wiedzy</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Uwagi</span>
+            <textarea name="assistance_needed" rows="3" placeholder="Uwagi"></textarea>
+          </label>
+        </div>
+
+          <div class="actions">
+            <button type="submit" class="btn primary">Zapisz osobę</button>
+          </div>
+                      </form>
+        </div>
+      </section>
+
+      <div class="save-message" id="save-message" hidden>
+        Dane zostały zapisane, w celu dodania informacji na temat udzielonej pomocy proszę wyszukać osobę w Lista osób i uzupełnić dane.
+      </div>
+
+      <section class="list-card" id="list-view">
+        <div class="section-header">
+          <h2>Lista osób</h2>
+          <p class="section-hint">Nowo zapisane osoby pojawią się poniżej.</p>
+        </div>
+        <div class="list-filters">
+          <label class="field">
+            <span>Wyszukaj po nazwisku</span>
+            <input type="text" id="filter-last-name" placeholder="np. Kowalska" />
+          </label>
+          <label class="field">
+            <span>Wyszukaj po PESEL</span>
+            <input type="text" id="filter-pesel" placeholder="11 cyfr" />
+          </label>
+          <button type="button" class="btn ghost" id="clear-filters">Wyczyść</button>
+        </div>
+        <div class="list">
+          <div class="list-head">
+            <span>Osoba</span>
+            <span>PESEL</span>
+            <span>Telefon</span>
+            <span>Oznaczenie osoby uprawnionej</span>
+          </div>
+          <div class="list-body" id="people-list">
+            <div class="list-row muted">
+              <span>Brak zapisanych osób</span>
+              <span>-</span>
+              <span>-</span>
+              <span>-</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </body>
+</html>

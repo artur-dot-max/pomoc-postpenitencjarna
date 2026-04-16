@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Odzyskiwanie hasła</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <main class="page" id="recover-page">
+      <section class="hero">
+        <div class="hero-content">
+          <p class="eyebrow">Pomoc postpenitencjarna</p>
+          <h1>Odzyskiwanie hasła</h1>
+          <p class="subtitle">Wprowadź kod resetu hasła, aby przejść do ustawienia nowego hasła.</p>
+        </div>
+        <div class="hero-card hero-logo">
+          <img src="/src/assets/fundusz-sprawiedliwosci.png" alt="Fundusz Sprawiedliwości" />
+        </div>
+      </section>
+
+      <form class="form-card" id="recover-form">
+        <div class="section-header">
+          <h2>Kod resetu hasła</h2>
+          <p class="section-hint">
+            W celu odzyskania hasła proszę o kontakt telefoniczny pod nr telefonu:<br />
+            22-23-90-505<br />
+            22-23-90-700<br />
+            539-521-634<br />
+            lub kontakt mailowy <b>DFN.wsparcie@ms.gov.pl</b> w celu uzyskania kodu do resetu hasła
+          </p>
+        </div>
+        <div class="grid" style="grid-template-columns: 1fr">
+          <label class="field">
+            <span>Kod resetu</span>
+            <input type="text" name="recovery_code" placeholder="XXXX-XXXX-XXXX-XXXX" />
+          </label>
+        </div>
+        <div class="actions">
+          <a class="btn ghost" href="login.html">Wróć do logowania</a>
+          <button type="submit" class="btn primary">Potwierdź kod</button>
+        </div>
+        <div class="save-message" id="recover-message" hidden></div>
+      </form>
+    </main>
+  </body>
+</html>

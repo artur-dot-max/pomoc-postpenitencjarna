@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Raporty</title>
+    <script>
+      (() => {
+        try {
+          const raw = sessionStorage.getItem("sessionUser");
+          if (!raw) {
+            window.location.replace("/login.html");
+            return;
+          }
+          JSON.parse(raw);
+        } catch {
+          window.location.replace("/login.html");
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="page" id="reports-page">
+      <nav class="top-nav">
+        <span class="app-name">Wykaz osób - Pomoc Postpenitencjarna</span>
+        <div class="nav-actions">
+          <a class="btn ghost" href="index.html">Wróć</a>
+        </div>
+      </nav>
+
+      <section class="hero">
+        <div class="hero-content">
+          <p class="eyebrow">Raporty</p>
+          <h1>Raporty i transfer bazy danych</h1>
+          <p class="subtitle">
+            Generowanie raportów oraz eksport/import bazy danych jak w wersji referencyjnej.
+          </p>
+        </div>
+        <div class="hero-card hero-logo">
+          <img src="/src/assets/fundusz-sprawiedliwosci.png" alt="Fundusz Sprawiedliwości" />
+        </div>
+      </section>
+
+      <section class="list-card">
+        <div class="section-header">
+          <h2>Zakres raportu</h2>
+          <p class="section-hint">Zakres dotyczy daty udzielenia pomocy.</p>
+        </div>
+        <div class="actions">
+          <label class="field">
+            <span>Data od</span>
+            <input type="date" id="r_from" />
+          </label>
+          <label class="field">
+            <span>Data do</span>
+            <input type="date" id="r_to" />
+          </label>
+        </div>
+        <div class="save-message" id="r_msg" hidden></div>
+      </section>
+
+      <section class="list-card">
+        <div class="section-header">
+          <h2>Rodzaje raportów</h2>
+        </div>
+        <div class="actions" style="display:flex; gap:12px; flex-wrap:wrap">
+          <label class="field field-checkbox" style="margin:0">
+            <input class="r_item" type="checkbox" value="tasks" />
+            <span>Miesięczny wg zadań</span>
+          </label>
+          <label class="field field-checkbox" style="margin:0">
+            <input class="r_item" type="checkbox" value="clients" />
+            <span>Osoby i udzielona pomoc</span>
+          </label>
+          <label class="field field-checkbox" style="margin:0">
+            <input class="r_item" type="checkbox" value="workers" />
+            <span>Aktywność pracowników</span>
+          </label>
+          <label class="field field-checkbox" style="margin:0">
+            <input class="r_item" type="checkbox" value="all" />
+            <span>Wszystkie dane (baza)</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="list-card">
+        <div class="section-header">
+          <h2>Generowanie raportów</h2>
+          <p class="section-hint">Generuje raport w wybranym formacie.</p>
+        </div>
+        <div class="actions">
+          <label class="field" style="max-width: 260px">
+            <span>Format</span>
+            <select id="r_format">
+              <option value="csv">CSV</option>
+              <option value="xlsx">Excel</option>
+            </select>
+          </label>
+          <button type="button" class="btn primary" id="r_generate">Generuj</button>
+          <button type="button" class="btn ghost" id="r_generate_all">Wszystkie dane</button>
+        </div>
+        <div class="save-message" id="r_content" hidden></div>
+      </section>
+
+      <section class="list-card">
+        <div class="section-header">
+          <h2>Pobieranie kopii bazy danych</h2>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn ghost" id="exportDb">Eksport bazy (.db)</button>
+          <button type="button" class="btn ministry-export-btn" id="encryptBackupDb">
+            Pobierz bazę i zaszyfruj do wysyłki do Ministerstwa
+          </button>
+          <button type="button" class="btn ghost" id="exportDbRar">Pobierz bazę danych i spakuj RAR</button>
+          <button type="button" class="btn ghost" id="exportDb7z">Pobierz bazę danych i spakuj 7z</button>
+        </div>
+        <p class="section-hint">
+          <br>Pobieranie zapisuje plik bazy lub archiwum do przeniesienia na inny komputer. Dla RAR/7z
+          wymagane jest zainstalowane narzędzie systemowe.
+        </p>
+        <div class="save-message" id="backupExportMsg" hidden></div>
+      </section>
+
+      <section class="list-card">
+        <div class="section-header">
+          <h2>Import bazy danych</h2>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn primary" id="importDb">Import bazy (.db)</button>
+          <label class="toggle import-mode-toggle">
+            <input id="importModeToggle" type="checkbox" checked />
+            <span class="toggle-ui" aria-hidden="true"></span>
+            <span id="importModeValue" class="toggle-text">Dopisz do bazy</span>
+          </label>
+        </div>
+        <p class="section-hint" id="importModeHint">
+          Tryb importu: Dopisz do bazy (zachowuje istniejące dane).
+        </p>
+        <div class="save-message" id="backupImportMsg" hidden></div>
+      </section>
+
+    </main>
+  </body>
+</html>

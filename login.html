@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Logowanie</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <main class="page" id="login-page">
+      <section class="hero">
+        <div class="hero-content">
+          <p class="eyebrow">Pomoc postpenitencjarna</p>
+          <h1>Logowanie</h1>
+          <p class="subtitle">Zaloguj się do systemu.</p>
+        </div>
+        <div class="hero-card hero-logo">
+          <img src="/src/assets/fundusz-sprawiedliwosci.png" alt="Fundusz Sprawiedliwości" />
+        </div>
+      </section>
+
+      <section class="form-card" id="license-page" hidden>
+        <div class="section-header">
+          <h2>Aktywacja licencji</h2>
+          <p class="section-hint">
+            Aktywacja jest wymagana tylko raz na tym komputerze. Po aktywacji dostępne będzie logowanie.<br /><br />
+            W celu uzyskania kodu licencji proszę o kontakt z Państwa Opiekunem lub w razie problemów
+            proszę o kontakt telefoniczny pod nr telefonu:<br />
+            22-23-90-505<br />
+            22-23-90-700<br />
+            539-521-634<br />
+            lub kontakt mailowy <b>DFN.wsparcie@ms.gov.pl</b>
+          </p>
+        </div>
+        <form class="grid" id="license-form" style="grid-template-columns: 1fr">
+          <label class="field">
+            <span>Klucz licencji</span>
+            <input type="text" name="license_key" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" />
+          </label>
+          <div class="actions">
+            <button type="submit" class="btn primary">Aktywuj</button>
+          </div>
+        </form>
+        <div class="save-message" id="license-message" hidden></div>
+      </section>
+
+      <form class="form-card" id="login-form">
+        <div class="section-header">
+          <h2>Dane logowania</h2>
+          <p class="section-hint" id="login-hint">Proszę wprowadzić login i hasło</p>
+        </div>
+        <div class="grid" style="grid-template-columns: 1fr">
+          <label class="field">
+            <span>Login</span>
+            <input type="text" name="username" autocomplete="username" />
+          </label>
+          <label class="field">
+            <span>Hasło</span>
+            <input type="password" name="password" autocomplete="current-password" />
+          </label>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn primary">Zaloguj</button>
+          <a class="btn ghost" href="recover.html">Odzyskaj hasło</a>
+          <button type="button" class="btn ghost" id="login-exit">Zamknij</button>
+        </div>
+        <div class="save-message" id="login-message" hidden></div>
+      </form>
+
+      <form class="form-card" id="reset-password-form" hidden>
+        <div class="section-header">
+          <h2>Reset hasła</h2>
+          <p class="section-hint">
+            Możesz teraz wpisać login, nowe hasło i powtórzenie nowego hasła.
+          </p>
+        </div>
+        <div class="grid" style="grid-template-columns: 1fr">
+          <label class="field">
+            <span>Login</span>
+            <input type="text" name="username" autocomplete="username" />
+          </label>
+          <label class="field">
+            <span>Nowe hasło</span>
+            <input type="password" name="new_password" autocomplete="new-password" />
+          </label>
+          <label class="field">
+            <span>Powtórz nowe hasło</span>
+            <input type="password" name="new_password_repeat" autocomplete="new-password" />
+          </label>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn primary">Zapisz nowe hasło</button>
+        </div>
+        <div class="save-message" id="reset-password-message" hidden></div>
+      </form>
+    </main>
+  </body>
+</html>

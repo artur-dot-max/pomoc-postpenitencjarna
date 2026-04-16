@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pracownicy</title>
+    <script>
+      (() => {
+        try {
+          const raw = sessionStorage.getItem("sessionUser");
+          if (!raw) {
+            window.location.replace("/login.html");
+            return;
+          }
+          JSON.parse(raw);
+        } catch {
+          window.location.replace("/login.html");
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <main class="page" id="workers-page">
+      <nav class="top-nav">
+        <span class="app-name">Wykaz osób - Pomoc Postpenitencjarna</span>
+        <div class="nav-actions">
+          <a class="btn ghost" href="index.html">Wróć</a>
+        </div>
+      </nav>
+
+      <section class="hero">
+        <div class="hero-content">
+          <p class="eyebrow" id="workers-hero-eyebrow">Pracownicy</p>
+          <h1 id="workers-hero-title">Zarządzanie kontami</h1>
+          <p class="subtitle">Zakres opcji zależy od roli zalogowanego użytkownika.</p>
+        </div>
+        <div class="hero-card hero-logo">
+          <img src="/src/assets/fundusz-sprawiedliwosci.png" alt="Fundusz Sprawiedliwości" />
+        </div>
+      </section>
+
+      <section class="list-card" id="admin-only" hidden>
+        <div class="section-header"><h2>Dodaj/edytuj pracownika</h2></div>
+        <form class="grid" id="worker-form">
+          <label class="field">
+            <span>Pracownik do edycji (opcjonalnie)</span>
+            <select name="selected_user_id" id="worker-user-select"></select>
+          </label>
+          <label class="field">
+            <span>Imię</span>
+            <input type="text" name="first_name" />
+          </label>
+          <label class="field">
+            <span>Nazwisko</span>
+            <input type="text" name="last_name" />
+          </label>
+          <label class="field">
+            <span>Stanowisko</span>
+            <input type="text" name="position" />
+          </label>
+          <label class="field">
+            <span>Rola</span>
+            <select name="role">
+              <option value="Staff">Pracownik</option>
+              <option value="Admin">Administrator</option>
+              <option value="ReadOnly">Tylko odczyt</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Hasło (dla nowego wymagane / przy edycji opcjonalne)</span>
+            <input type="password" name="password" />
+          </label>
+          <p class="section-hint" style="grid-column: 1 / -1">Login zostanie nadany automatycznie na podstawie imienia i nazwiska.</p>
+          <div class="actions" style="grid-column: 1 / -1">
+            <button type="button" class="btn ghost" id="worker-reset">Wyczyść</button>
+            <button type="submit" class="btn primary">Zapisz pracownika</button>
+          </div>
+        </form>
+        <div class="save-message" id="workers-message" hidden></div>
+      </section>
+
+      <section class="list-card" id="admin-password" hidden>
+        <div class="section-header"><h2>Zmień hasło</h2></div>
+        <form class="grid" id="admin-password-form">
+          <label class="field">
+            <span>Użytkownik</span>
+            <select name="user_id" id="admin-password-user"></select>
+          </label>
+          <label class="field">
+            <span>Nowe hasło</span>
+            <input type="password" name="new_password" />
+          </label>
+          <div class="actions" style="grid-column: 1 / -1">
+            <button type="submit" class="btn primary">Zmień hasło</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="list-card" id="worker-self-data" hidden>
+        <div class="section-header"><h2 id="self-data-title">Zmień moje dane</h2></div>
+        <form class="grid" id="self-data-form">
+          <label class="field">
+            <span>Imię</span>
+            <input type="text" name="first_name" />
+          </label>
+          <label class="field">
+            <span>Nazwisko</span>
+            <input type="text" name="last_name" />
+          </label>
+          <label class="field">
+            <span>Stanowisko</span>
+            <input type="text" name="position" />
+          </label>
+          <label class="field">
+            <span>Login</span>
+            <input type="text" name="username" />
+          </label>
+          <div class="actions" style="grid-column: 1 / -1">
+            <button type="submit" class="btn primary">Zapisz moje dane</button>
+          </div>
+        </form>
+        <div class="save-message" id="workers-self-data-message" hidden></div>
+      </section>
+
+      <section class="list-card" id="worker-self-password" hidden>
+        <div class="section-header"><h2>Zmień hasło</h2></div>
+        <form class="grid" id="self-password-form">
+          <label class="field">
+            <span>Stare hasło</span>
+            <input type="password" name="old_password" />
+          </label>
+          <label class="field">
+            <span>Nowe hasło</span>
+            <input type="password" name="new_password" />
+          </label>
+          <div class="actions" style="grid-column: 1 / -1">
+            <button type="submit" class="btn primary">Zmień hasło</button>
+          </div>
+        </form>
+        <div class="save-message" id="workers-self-message" hidden></div>
+      </section>
+
+      <section class="list-card" id="admin-list" hidden>
+        <div class="section-header"><h2>Lista pracowników</h2></div>
+        <div class="list">
+          <div class="list-head">
+            <span>Imię i nazwisko</span>
+            <span>Aktywny</span>
+            <span>Stanowisko</span>
+            <span>Login</span>
+          </div>
+          <div class="list-body" id="workers-list"></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dane organizacji</title>
+    <script>
+      (() => {
+        try {
+          const raw = sessionStorage.getItem("sessionUser");
+          if (!raw) {
+            window.location.replace("/login.html");
+            return;
+          }
+          JSON.parse(raw);
+        } catch {
+          window.location.replace("/login.html");
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="page">
+      <nav class="top-nav">
+        <span class="app-name">Wykaz osób - Pomoc Postpenitencjarna</span>
+        <div class="nav-actions">
+          <a class="btn ghost" href="index.html">Wróć</a>
+        </div>
+      </nav>
+
+      <section class="hero">
+        <div class="hero-content">
+          <p class="eyebrow">Dane organizacji</p>
+          <h1>Uzupełnij informacje o organizacji</h1>
+          <p class="subtitle">Te dane będą używane w raportach i komunikacji.</p>
+        </div>
+        <div class="hero-card hero-logo">
+          <img src="/src/assets/fundusz-sprawiedliwosci.png" alt="Fundusz Sprawiedliwości" />
+        </div>
+      </section>
+
+      <section class="form-card">
+        <div class="section-header">
+          <h2>Bazy umów</h2>
+          <p class="section-hint" id="contracts-active-label">Aktywna umowa: brak numeru</p>
+        </div>
+
+        <div id="contracts-list"></div>
+
+        <div class="grid" style="margin-top: 24px">
+          <label class="field">
+            <span>Numer nowej umowy</span>
+            <input type="text" id="new-contract-number" placeholder="np. 12/PP/2026" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn primary" id="create-contract-db">
+            Utwórz nową bazę umowy
+          </button>
+        </div>
+        <div class="save-message" id="contracts-message" hidden></div>
+      </section>
+
+      <form class="form-card" id="org-form">
+        <div class="section-header">
+          <h2>Dane organizacji</h2>
+          <p class="section-hint readonly-hint" id="org-readonly-hint" hidden>
+            Tryb tylko do odczytu, naciśnij EDYTUJ DANE w celu ich zmian.
+          </p>
+        </div>
+
+        <div class="grid">
+          <label class="field">
+            <span>Nazwa organizacji</span>
+            <input type="text" name="org_name" placeholder="np. Fundacja XYZ" />
+          </label>
+          <label class="field">
+            <span>Nazwa Ośrodka</span>
+            <input type="text" name="center_name" placeholder="np. Ośrodek Pomocy" />
+          </label>
+          <label class="field">
+            <span>Nr umowy</span>
+            <input type="text" name="contract_number" placeholder="np. 12/PP/2026" />
+          </label>
+          <label class="field">
+            <span>Imię i nazwisko osoby do kontaktu</span>
+            <input type="text" name="contact_person" placeholder="np. Anna Kowalska" />
+          </label>
+          <label class="field">
+            <span>Nr telefonu</span>
+            <input type="tel" name="contact_phone" placeholder="+48 ..." />
+          </label>
+          <label class="field">
+            <span>Adres e-mail</span>
+            <input type="email" name="contact_email" placeholder="adres@example.com" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn ghost" id="org-edit">Edytuj dane</button>
+          <button type="submit" class="btn primary" id="org-save">Zapisz dane</button>
+        </div>
+        <div class="save-message" id="org-save-message" hidden>
+          Dane organizacji zostały zapisane.
+        </div>
+      </form>
+    </main>
+  </body>
+</html>
