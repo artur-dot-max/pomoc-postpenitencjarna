@@ -9,6 +9,7 @@ export default defineConfig(async () => ({
 
   base: "./",
   build: {
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       input: {
         login: resolve(__dirname, "login.html"),

@@ -2,7 +2,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import ExcelJS from "exceljs";
 
 type Person = {
   id: number;
@@ -80,6 +79,15 @@ type ReportDataset = {
   rows: string[][];
   summary: ReportSummary;
 };
+
+let excelJsModulePromise: Promise<typeof import("exceljs")> | null = null;
+
+function loadExcelJs() {
+  if (!excelJsModulePromise) {
+    excelJsModulePromise = import("exceljs");
+  }
+  return excelJsModulePromise;
+}
 
 type AppRole = "Admin" | "Staff" | "ReadOnly";
 
@@ -3067,6 +3075,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     async function buildWorkbookBytes(sheets: Array<{ name: string; rows: string[][] }>) {
+      const ExcelJS = await loadExcelJs();
       const workbook = new ExcelJS.Workbook();
       for (const sheet of sheets) {
         const worksheet = workbook.addWorksheet(sheet.name.slice(0, 31));
