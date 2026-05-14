@@ -243,6 +243,159 @@
         </div>
       </section>
 
+      <section class="accordion help-entry-accordion">
+        <button type="button" class="accordion-toggle" id="toggle-shared-help">
+          <span>Wpis pomocy współdzielonej</span>
+          <span class="accordion-meta">Kliknij, aby rozwinąć</span>
+        </button>
+        <div class="accordion-panel" id="shared-help-panel" hidden>
+          <form class="form-card" id="shared-help-form">
+            <div class="section-header">
+              <h2>Wpis pomocy współdzielonej</h2>
+              <p class="section-hint">
+                Zaznacz osoby, a aplikacja podzieli łączną wartość pomocy i dopisze wpis do każdej karty osoby.
+              </p>
+            </div>
+
+            <div class="grid">
+              <label class="field field-full-row">
+                <span>Rodzaj wsparcia *</span>
+                <select name="help_type" id="shared-help-type">
+                  <option value="">Wybierz</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Data udzielonej pomocy *</span>
+                <input type="date" name="help_date" />
+              </label>
+              <label class="field">
+                <span>Data wpisu *</span>
+                <input type="date" name="entry_date" />
+              </label>
+              <label class="field">
+                <span>Kwota *</span>
+                <input type="number" step="0.01" name="help_amount" placeholder="PLN" />
+              </label>
+              <label class="field">
+                <span>Ilość *</span>
+                <input type="number" step="0.01" name="help_quantity" value="1" />
+              </label>
+            </div>
+
+            <div class="shared-help-layout">
+              <section class="shared-help-people">
+                <div class="section-header compact">
+                  <h3>Lista osób</h3>
+                  <p class="section-hint">Możesz zaznaczyć kilka osób.</p>
+                </div>
+                <div class="shared-help-filters">
+                  <label class="field">
+                    <span>Szukaj po imieniu lub nazwisku</span>
+                    <input type="text" id="shared-help-filter-name" placeholder="np. Kowalska" />
+                  </label>
+                  <label class="field">
+                    <span>Szukaj po PESEL</span>
+                    <input type="text" id="shared-help-filter-pesel" placeholder="11 cyfr" />
+                  </label>
+                  <button type="button" class="btn ghost" id="shared-help-clear-filters">Wyczyść filtry</button>
+                </div>
+                <div class="shared-help-selection-bar">
+                  <span id="shared-help-selected-count">Zaznaczono: 0</span>
+                  <button type="button" class="btn ghost" id="shared-help-clear-selection">Wyczyść zaznaczenie</button>
+                </div>
+                <div class="shared-person-list" id="shared-help-people-list"></div>
+                <div class="shared-help-pagination">
+                  <button type="button" class="btn ghost" id="shared-help-prev-page">Poprzednia</button>
+                  <span id="shared-help-page-info">Strona 1 z 1</span>
+                  <button type="button" class="btn ghost" id="shared-help-next-page">Następna</button>
+                </div>
+              </section>
+
+              <section class="shared-help-summary" id="shared-help-summary">
+                <div>
+                  <span>Podsumowanie kwoty</span>
+                  <strong data-summary="total">0,00 zł</strong>
+                </div>
+                <div>
+                  <span>Liczba osób</span>
+                  <strong data-summary="people">0</strong>
+                </div>
+                <div>
+                  <span>Kwota na osobę</span>
+                  <strong data-summary="per-person">-</strong>
+                </div>
+              </section>
+            </div>
+
+            <div class="actions">
+              <button type="reset" class="btn ghost">Wyczyść</button>
+              <button type="submit" class="btn primary">Podziel i dopisz pomoc</button>
+            </div>
+            <div class="save-message" id="shared-help-message" hidden></div>
+          </form>
+        </div>
+      </section>
+
+      <section class="accordion help-entry-accordion">
+        <button type="button" class="accordion-toggle" id="toggle-indivisible-help">
+          <span>Wpis pomocy niepodzielnej</span>
+          <span class="accordion-meta">Kliknij, aby rozwinąć</span>
+        </button>
+        <div class="accordion-panel" id="indivisible-help-panel" hidden>
+          <form class="form-card" id="indivisible-help-form">
+            <div class="section-header">
+              <h2>Wpis pomocy niepodzielnej</h2>
+              <p class="section-hint">
+                Zapisz pomoc, której nie można przypisać proporcjonalnie do osób uprawnionych.
+              </p>
+            </div>
+
+            <div class="grid">
+              <label class="field field-full-row">
+                <span>Rodzaj wsparcia *</span>
+                <select name="help_type">
+                  <option value="">Wybierz</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Data udzielonej pomocy *</span>
+                <input type="date" name="help_date" />
+              </label>
+              <label class="field">
+                <span>Data wpisu *</span>
+                <input type="date" name="entry_date" />
+              </label>
+              <label class="field">
+                <span>Kwota *</span>
+                <input type="number" step="0.01" name="help_amount" placeholder="PLN" />
+              </label>
+              <label class="field">
+                <span>Ilość *</span>
+                <input type="number" step="0.01" name="help_quantity" value="1" />
+              </label>
+              <label class="field field-full-row">
+                <span>Opis dlaczego pomoc nie może zostać podzielona *</span>
+                <textarea name="reason" rows="4" placeholder="Opisz przyczynę"></textarea>
+              </label>
+            </div>
+
+            <div class="actions">
+              <button type="reset" class="btn ghost">Wyczyść</button>
+              <button type="submit" class="btn primary">Zapisz wpis</button>
+            </div>
+            <div class="save-message" id="indivisible-help-message" hidden></div>
+          </form>
+
+          <section class="list-card indivisible-help-history">
+            <div class="section-header">
+              <h2>Lista pomocy niepodzielnej</h2>
+              <p class="section-hint">Ostatnie zapisane wpisy.</p>
+            </div>
+            <div class="indivisible-help-list" id="indivisible-help-list"></div>
+          </section>
+        </div>
+      </section>
+
       <div class="save-message" id="save-message" hidden>
         Dane zostały zapisane, w celu dodania informacji na temat udzielonej pomocy proszę wyszukać osobę w Lista osób i uzupełnić dane.
       </div>
@@ -277,6 +430,11 @@
               <span>-</span>
               <span>-</span>
             </div>
+          </div>
+          <div class="people-pagination">
+            <button type="button" class="btn ghost" id="people-prev-page">Poprzednia</button>
+            <span id="people-page-info">Strona 1 z 1</span>
+            <button type="button" class="btn ghost" id="people-next-page">Następna</button>
           </div>
         </div>
       </section>

@@ -55,6 +55,55 @@ Wazne mechanizmy:
 
 ## Historia zmian
 
+### 2026-05-13
+
+#### Dodanie wpisów pomocy z poziomu strony głównej
+- Na stronie głównej dodano dwa zwijane panele: `Wpis pomocy współdzielonej` oraz `Wpis pomocy niepodzielnej`.
+- Wpis pomocy współdzielonej pozwala wybrać rodzaj wsparcia, datę udzielonej pomocy, datę wpisu, kwotę, ilość oraz wiele osób z listy.
+- Aplikacja wylicza łączną kwotę, liczbę zaznaczonych osób i kwotę przypadającą na osobę.
+- Po zapisie pomoc współdzielona jest automatycznie dopisywana do kart zaznaczonych osób jako wpisy w `person_help_entries`.
+- Dodano zapis pomocy niepodzielnej do osobnej tabeli `indivisible_help_entries`, wraz z listą ostatnich wpisów na stronie głównej.
+- Dla pomocy niepodzielnej zapis obejmuje kod i pełną etykietę wybranego rodzaju wsparcia.
+- Ujednolicono katalog rodzajów wsparcia dla formularza na karcie osoby i formularza pomocy współdzielonej.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
+#### Walidacja daty udzielonej pomocy względem okresu uprawnienia
+- Usunięto blokadę dodawania osoby opartą o bieżącą datę po upływie okresu pomocy.
+- Dodano walidację przy zapisie pomocy: dla osób z ograniczonym okresem wsparcia data udzielonej pomocy musi mieścić się od daty zwolnienia do daty końca okresu pomocy.
+- Zasada działa dla wpisu pomocy na karcie osoby oraz dla wpisu pomocy współdzielonej z poziomu strony głównej.
+- Skutek: można wprowadzać dane historyczne, jeśli sama data udzielonej pomocy mieści się w okresie uprawnienia.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
+#### Odświeżenie okresu udzielania pomocy po edycji dat osoby
+- Po zapisie edycji karty osoby aplikacja ponownie odczytuje rekord z bazy i renderuje szczegóły z aktualnych danych.
+- Dzięki temu zmiana daty zwolnienia lub zgody na przedłużenie pomocy od razu aktualizuje informację `Okres udzielania pomocy kończy się dnia`.
+- Po odświeżeniu danych aktualizowany jest również stan używany przy walidacji daty wpisu pomocy.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
+#### Nazwa pliku bazy wewnątrz archiwów RAR i 7Z
+- Zmieniono nazewnictwo eksportu bazy danych na format `NR_UMOWY_BAZA_DANYCH_MIESIAC_ROK`.
+- Przy tworzeniu hasłowanych archiwów RAR i 7Z backend tworzy migawkę bazy pod nazwą przekazaną z frontendu, zamiast technicznej nazwy `export-snapshot-...db`.
+- Skutek: wewnątrz archiwum znajduje się plik `.db` z nazwą biznesową, np. `NR_UMOWY_BAZA_DANYCH_KWIECIEN_2026.db`.
+- Weryfikacja: uruchomiono `npm run build` oraz `cargo check`; oba polecenia zakończyły się powodzeniem.
+
+#### Filtrowanie listy osób przy pomocy współdzielonej
+- W panelu `Wpis pomocy współdzielonej` dodano wyszukiwanie osób po imieniu/nazwisku oraz PESEL.
+- Dodano licznik zaznaczonych osób i przycisk czyszczenia zaznaczeń.
+- Zaznaczone osoby pozostają zaznaczone podczas filtrowania listy.
+- Dodano paginację listy osób po 5 osób na stronę.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
+#### Paginacja głównej listy osób
+- Do sekcji `Lista osób` na stronie głównej dodano paginację po 20 osób na stronę.
+- Filtry po nazwisku i PESEL działają przed podziałem wyników na strony.
+- Dodano przyciski `Poprzednia` i `Następna` oraz informację o aktualnej stronie.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
+#### Ukrycie technicznych nazw baz w widoku umów
+- W sekcji `Dane organizacji` -> `Bazy umów` usunięto z widoku nazwy plików baz danych.
+- Lista pokazuje teraz numer umowy oraz dane organizacji/ośrodka, a ścieżka bazy pozostaje tylko w technicznym atrybucie potrzebnym do przełączania i usuwania umów.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
 ### 2026-03-31
 
 #### Utworzenie pliku operacyjnego

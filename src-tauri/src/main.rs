@@ -10,7 +10,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use tauri_plugin_sql::Builder;
@@ -357,6 +357,57 @@ fn create_database_snapshot(source_path: &PathBuf) -> Result<PathBuf, String> {
         .map_err(|e| format!("Nie udało się przygotować spójnej migawki bazy danych: {e}"))?;
 
     Ok(snapshot_path)
+}
+
+fn validate_export_file_name(file_name: &str, default_name: &str) -> Result<String, String> {
+    let trimmed = file_name.trim();
+    let candidate = if trimmed.is_empty() { default_name } else { trimmed };
+    let path = Path::new(candidate);
+    if path.is_absolute() || path.components().count() != 1 {
+        return Err("Nieprawidłowa nazwa pliku w archiwum.".to_string());
+    }
+    let mut normalized = candidate.to_string();
+    if !normalized.to_lowercase().ends_with(".db") {
+        normalized.push_str(".db");
+    }
+    Ok(normalized)
+}
+
+fn create_database_snapshot_with_file_name(
+    source_path: &PathBuf,
+    file_name: &str,
+) -> Result<PathBuf, String> {
+    if !source_path.exists() {
+        return Err("Plik bazy danych nie istnieje.".to_string());
+    }
+
+    let parent = source_path
+        .parent()
+        .ok_or_else(|| "Nie udało się ustalić katalogu bazy danych.".to_string())?;
+    let temp_dir = parent.join(format!("export-snapshot-{}", now_millis()));
+    fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Nie udało się przygotować katalogu eksportu: {e}"))?;
+    let snapshot_file_name = validate_export_file_name(file_name, "baza_danych.db")?;
+    let snapshot_path = temp_dir.join(snapshot_file_name);
+
+    let source_conn =
+        Connection::open(source_path).map_err(|e| format!("Nie udało się otworzyć bazy danych: {e}"))?;
+    let snapshot_sql = format!(
+        "VACUUM INTO '{}'",
+        sqlite_string_literal(&snapshot_path.to_string_lossy())
+    );
+    source_conn
+        .execute(&snapshot_sql, [])
+        .map_err(|e| format!("Nie udało się przygotować spójnej migawki bazy danych: {e}"))?;
+
+    Ok(snapshot_path)
+}
+
+fn cleanup_snapshot_path(snapshot_path: &Path) {
+    let _ = fs::remove_file(snapshot_path);
+    if let Some(parent) = snapshot_path.parent() {
+        let _ = fs::remove_dir(parent);
+    }
 }
 
 fn create_person_uuid() -> String {
@@ -1282,12 +1333,14 @@ fn create_password_protected_rar(
     out_path: String,
     password: String,
     db_path: Option<String>,
+    archive_entry_name: Option<String>,
 ) -> Result<backup_crypto::BackupRarResult, String> {
     let db_path = resolve_contract_db_path(&app, db_path)?;
     let destination = PathBuf::from(out_path.trim());
-    let snapshot_path = create_database_snapshot(&db_path)?;
+    let snapshot_file_name = archive_entry_name.unwrap_or_else(|| "baza_danych.db".to_string());
+    let snapshot_path = create_database_snapshot_with_file_name(&db_path, &snapshot_file_name)?;
     let result = backup_crypto::create_password_protected_rar(&snapshot_path, &destination, &password);
-    let _ = fs::remove_file(&snapshot_path);
+    cleanup_snapshot_path(&snapshot_path);
     result
 }
 
@@ -1297,12 +1350,14 @@ fn create_password_protected_7z(
     out_path: String,
     password: String,
     db_path: Option<String>,
+    archive_entry_name: Option<String>,
 ) -> Result<backup_crypto::BackupRarResult, String> {
     let db_path = resolve_contract_db_path(&app, db_path)?;
     let destination = PathBuf::from(out_path.trim());
-    let snapshot_path = create_database_snapshot(&db_path)?;
+    let snapshot_file_name = archive_entry_name.unwrap_or_else(|| "baza_danych.db".to_string());
+    let snapshot_path = create_database_snapshot_with_file_name(&db_path, &snapshot_file_name)?;
     let result = backup_crypto::create_password_protected_7z(&snapshot_path, &destination, &password);
-    let _ = fs::remove_file(&snapshot_path);
+    cleanup_snapshot_path(&snapshot_path);
     result
 }
 

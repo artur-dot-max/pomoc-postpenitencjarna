@@ -148,6 +148,84 @@ const DESIGNATION_LABELS: Record<string, string> = {
     "Osoba najbliższa osobie zwolnionej z zakładu karnego/aresztu śledczego",
 };
 
+const HELP_TYPE_OPTIONS = [
+  ["1", "1) pokrywanie kosztów czasowego zakwaterowania lub udzielanie schronienia w ośrodku dla bezdomnych;"],
+  [
+    "2",
+    "2) okresową dopłatę do bieżących zobowiązań czynszowych i opłat za energię cieplną, energię elektryczną, gaz, wodę, opał, odbiór nieczystości stałych i płynnych za lokal mieszkalny lub dom jednorodzinny, do którego osoba uprawniona posiada tytuł prawny, proporcjonalnie do liczby osób stale zamieszkujących w tym lokalu lub domu;",
+  ],
+  ["3", "3) organizowanie i finansowanie poradnictwa prawnego, promocji zatrudnienia i aktywizacji zawodowej;"],
+  [
+    "4",
+    "4) organizowanie i finansowanie szkoleń i kursów podnoszących kwalifikacje zawodowe oraz pokrywanie kosztów egzaminów potwierdzających kwalifikacje zawodowe;",
+  ],
+  [
+    "5",
+    "5) organizowanie i finansowanie programów podnoszących kompetencje społeczne, mających na celu przeciwdziałanie czynnikom kryminogennym, a zwłaszcza agresji i przemocy, w tym przemocy w rodzinie, oraz problemom uzależnień;",
+  ],
+  [
+    "6",
+    "6) zakup materiałów, narzędzi, wyposażenia oraz urządzeń niezbędnych do realizacji programów, o których mowa w pkt 5, oraz szkoleń i kursów podnoszących kwalifikacje zawodowe, a także wykonywania pracy nieodpłatnej;",
+  ],
+  [
+    "7",
+    "7) pokrywanie kosztów związanych ze specjalistycznym leczeniem lub rehabilitacją leczniczą oraz uzyskiwaniem orzeczeń o niepełnosprawności, stopniu niepełnosprawności lub niezdolności do pracy;",
+  ],
+  [
+    "8",
+    "8) pokrywanie kosztów transportu specjalnego, zgodnie ze wskazaniami lekarskimi, lub przejazdów do miejsca pobytu, nauki, terapii, pracy, zwłaszcza wykonywanej nieodpłatnie;",
+  ],
+  [
+    "9",
+    "9) pokrywanie kosztów związanych z uzyskaniem dowodu osobistego oraz innych dokumentów niezbędnych do uzyskania pomocy;",
+  ],
+  [
+    "10",
+    "10) pokrywanie kosztów badań specjalistycznych wymaganych przy kwalifikowaniu do udziału w programach, o których mowa w pkt 5, szkoleniach i kursach podnoszących kwalifikacje zawodowe oraz pracy wykonywanej nieodpłatnie;",
+  ],
+  [
+    "11",
+    "11) pokrywanie kosztów grupowego ubezpieczenia od następstw nieszczęśliwych wypadków osób zakwalifikowanych do udziału w szkoleniach i kursach podnoszących kwalifikacje zawodowe, programach, o których mowa w pkt 5, oraz pracy wykonywanej nieodpłatnie;",
+  ],
+  [
+    "12",
+    "12) promowanie i wspieranie inicjatyw i przedsięwzięć służących skutecznej readaptacji skazanych, działań o charakterze edukacyjnym i informacyjnym, organizowanie i prowadzenie szkoleń, organizowanie i zlecanie badań naukowych dotyczących sytuacji osób skazanych;",
+  ],
+  [
+    "13a",
+    "13a) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie żywności lub bonów żywnościowych,",
+  ],
+  [
+    "13b",
+    "13b) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie odzieży, bielizny, obuwia, środków czystości i higieny osobistej lub bonów towarowych,",
+  ],
+  [
+    "13c",
+    "13c) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie biletów komunikacji publicznej,",
+  ],
+  [
+    "13d",
+    "13d) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie leków, środków opatrunkowych i sanitarnych,",
+  ],
+  [
+    "13e",
+    "13e) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie wyrobów medycznych, w tym protez, przedmiotów ortopedycznych i środków pomocniczych,",
+  ],
+  [
+    "13f",
+    "13f) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie pomocy naukowych, dydaktycznych, książek i materiałów biurowych,",
+  ],
+  [
+    "13g",
+    "13g) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie niezbędnych przedmiotów wyposażenia domowego lub innych przedmiotów użytku osobistego ułatwiających funkcjonowanie społeczne w miejscu zamieszkania lub pobytu, zwłaszcza osób niepełnosprawnych,",
+  ],
+  [
+    "13h",
+    "13h) pokrywanie kosztów związanych z organizacją i udzielaniem pomocy rzeczowej w formie materiałów, narzędzi i wyposażenia niezbędnego do uczestnictwa w szkoleniu zawodowym, wykonywania wyuczonego zawodu albo prowadzenia działalności gospodarczej na własny rachunek",
+  ],
+  ["14", "14) udzielanie świadczeń pieniężnych na cel wskazany przez organ lub podmiot udzielający pomocy"],
+] as const;
+
 function nowIsoUtc() {
   return new Date().toISOString();
 }
@@ -449,6 +527,50 @@ function formatDatePl(date: Date) {
   return `${day}.${month}.${year}`;
 }
 
+function getPersonSupportPeriod(person: Pick<Person, "eligible_person_designation" | "release_date" | "assistance_extension_approved">) {
+  const limitedAssistanceDesignations = new Set(["ZWOLNIONA", "NAJBLIZSZA_ZWOLNIONEJ"]);
+  const designation = person.eligible_person_designation ?? "";
+  if (!limitedAssistanceDesignations.has(designation)) {
+    return null;
+  }
+  const releaseDate = parseDateInput(person.release_date ?? "");
+  if (!releaseDate) {
+    return { error: "brak daty zwolnienia" };
+  }
+  const supportMonths = person.assistance_extension_approved === 1 ? 12 : 6;
+  return {
+    from: releaseDate,
+    to: addMonths(releaseDate, supportMonths),
+    supportMonths,
+  };
+}
+
+function validateHelpDateForPerson(helpDateValue: string, person: Pick<Person, "eligible_person_designation" | "release_date" | "assistance_extension_approved">) {
+  const helpDate = parseDateInput(helpDateValue);
+  if (!helpDate) {
+    return { isValid: false, message: "Podaj prawidłową datę udzielonej pomocy." };
+  }
+  const period = getPersonSupportPeriod(person);
+  if (!period) {
+    return { isValid: true };
+  }
+  if ("error" in period) {
+    return {
+      isValid: false,
+      message: "Dla tej osoby nie można zweryfikować okresu pomocy, ponieważ brakuje daty zwolnienia.",
+    };
+  }
+  if (helpDate < period.from || helpDate > period.to) {
+    return {
+      isValid: false,
+      message: `Data udzielonej pomocy musi mieścić się w okresie od ${formatDatePl(
+        period.from
+      )} do ${formatDatePl(period.to)}.`,
+    };
+  }
+  return { isValid: true };
+}
+
 function toLoginToken(value: string) {
   return value
     .normalize("NFD")
@@ -513,11 +635,22 @@ function createListRow(person: Person) {
   return row;
 }
 
-function applyFilters(list: HTMLDivElement, lastNameQuery: string, peselQuery: string) {
-  let visibleCount = 0;
+function applyFilters(
+  list: HTMLDivElement,
+  lastNameQuery: string,
+  peselQuery: string,
+  options?: {
+    page?: number;
+    pageSize?: number;
+    pageInfo?: HTMLElement | null;
+    prevButton?: HTMLButtonElement | null;
+    nextButton?: HTMLButtonElement | null;
+  }
+) {
+  const matchingRows: HTMLDivElement[] = [];
   Array.from(list.children).forEach((child) => {
     const row = child as HTMLDivElement;
-    if (row.classList.contains("muted")) {
+    if (row.classList.contains("muted") || row.id === "no-results") {
       return;
     }
 
@@ -528,16 +661,22 @@ function applyFilters(list: HTMLDivElement, lastNameQuery: string, peselQuery: s
     const matchesLastName =
       !lastNameQuery || lastName.includes(lastNameQuery) || fullName.includes(lastNameQuery);
     const matchesPesel = !peselQuery || pesel.includes(peselQuery);
-    const isVisible = matchesLastName && matchesPesel;
-
-    row.style.display = isVisible ? "grid" : "none";
-    if (isVisible) {
-      visibleCount += 1;
+    if (matchesLastName && matchesPesel) {
+      matchingRows.push(row);
     }
+    row.style.display = "none";
+  });
+
+  const pageSize = options?.pageSize ?? (matchingRows.length || 1);
+  const totalPages = Math.max(1, Math.ceil(matchingRows.length / pageSize));
+  const currentPage = Math.min(Math.max(1, options?.page ?? 1), totalPages);
+  const startIndex = (currentPage - 1) * pageSize;
+  matchingRows.slice(startIndex, startIndex + pageSize).forEach((row) => {
+    row.style.display = "grid";
   });
 
   let noResults = list.querySelector<HTMLDivElement>("#no-results");
-  if (visibleCount === 0 && (lastNameQuery || peselQuery)) {
+  if (matchingRows.length === 0 && (lastNameQuery || peselQuery)) {
     if (!noResults) {
       noResults = document.createElement("div");
       noResults.id = "no-results";
@@ -553,6 +692,19 @@ function applyFilters(list: HTMLDivElement, lastNameQuery: string, peselQuery: s
   } else if (noResults) {
     noResults.remove();
   }
+
+  if (options?.pageInfo) {
+    options.pageInfo.textContent = matchingRows.length
+      ? `Strona ${currentPage} z ${totalPages}`
+      : "Strona 0 z 0";
+  }
+  if (options?.prevButton) {
+    options.prevButton.disabled = currentPage <= 1 || matchingRows.length === 0;
+  }
+  if (options?.nextButton) {
+    options.nextButton.disabled = currentPage >= totalPages || matchingRows.length === 0;
+  }
+  return { currentPage, totalPages, visibleCount: matchingRows.length };
 }
 
 async function loadPersons(list: HTMLDivElement) {
@@ -756,6 +908,34 @@ async function ensureHelpTable() {
   }
 }
 
+async function ensureIndivisibleHelpTable() {
+  const db = await getDb();
+  await db.execute(
+    `CREATE TABLE IF NOT EXISTS indivisible_help_entries (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      entry_uuid      TEXT UNIQUE,
+      help_date       TEXT,
+      entry_date      TEXT,
+      help_type       TEXT,
+      help_type_label TEXT,
+      help_amount     REAL,
+      help_quantity   REAL,
+      reason          TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )`
+  );
+  await db.execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_indivisible_help_entries_uuid ON indivisible_help_entries(entry_uuid)"
+  );
+  type TableInfoRow = { name: string };
+  const columns = await db.select<TableInfoRow[]>("PRAGMA table_info(indivisible_help_entries)");
+  const hasHelpTypeLabel = columns.some((column) => column.name === "help_type_label");
+  if (!hasHelpTypeLabel) {
+    await db.execute("ALTER TABLE indivisible_help_entries ADD COLUMN help_type_label TEXT");
+  }
+}
+
 async function ensureUsersTable() {
   const db = await getDb();
   await db.execute(
@@ -935,6 +1115,9 @@ window.addEventListener("DOMContentLoaded", () => {
     const filterLastName = document.querySelector<HTMLInputElement>("#filter-last-name");
     const filterPesel = document.querySelector<HTMLInputElement>("#filter-pesel");
     const clearFilters = document.querySelector<HTMLButtonElement>("#clear-filters");
+    const peoplePrevPage = document.querySelector<HTMLButtonElement>("#people-prev-page");
+    const peopleNextPage = document.querySelector<HTMLButtonElement>("#people-next-page");
+    const peoplePageInfo = document.querySelector<HTMLSpanElement>("#people-page-info");
     const navOrg = document.querySelector<HTMLButtonElement>("#nav-org");
     const navStaff = document.querySelector<HTMLButtonElement>("#nav-staff");
     const navReports = document.querySelector<HTMLButtonElement>("#nav-reports");
@@ -943,6 +1126,32 @@ window.addEventListener("DOMContentLoaded", () => {
     const togglePersonForm = document.querySelector<HTMLButtonElement>("#toggle-person-form");
     const personPanel = document.querySelector<HTMLDivElement>("#person-panel");
     const personFormMeta = togglePersonForm?.querySelector<HTMLSpanElement>(".accordion-meta");
+    const toggleSharedHelp = document.querySelector<HTMLButtonElement>("#toggle-shared-help");
+    const sharedHelpPanel = document.querySelector<HTMLDivElement>("#shared-help-panel");
+    const sharedHelpMeta = toggleSharedHelp?.querySelector<HTMLSpanElement>(".accordion-meta");
+    const sharedHelpForm = document.querySelector<HTMLFormElement>("#shared-help-form");
+    const sharedHelpPeopleList = document.querySelector<HTMLDivElement>("#shared-help-people-list");
+    const sharedHelpSummary = document.querySelector<HTMLDivElement>("#shared-help-summary");
+    const sharedHelpMessage = document.querySelector<HTMLDivElement>("#shared-help-message");
+    const sharedHelpTypeSelect = document.querySelector<HTMLSelectElement>("#shared-help-type");
+    const sharedHelpFilterName = document.querySelector<HTMLInputElement>("#shared-help-filter-name");
+    const sharedHelpFilterPesel = document.querySelector<HTMLInputElement>("#shared-help-filter-pesel");
+    const sharedHelpClearFilters =
+      document.querySelector<HTMLButtonElement>("#shared-help-clear-filters");
+    const sharedHelpSelectedCount =
+      document.querySelector<HTMLSpanElement>("#shared-help-selected-count");
+    const sharedHelpClearSelection =
+      document.querySelector<HTMLButtonElement>("#shared-help-clear-selection");
+    const sharedHelpPrevPage = document.querySelector<HTMLButtonElement>("#shared-help-prev-page");
+    const sharedHelpNextPage = document.querySelector<HTMLButtonElement>("#shared-help-next-page");
+    const sharedHelpPageInfo = document.querySelector<HTMLSpanElement>("#shared-help-page-info");
+    const toggleIndivisibleHelp = document.querySelector<HTMLButtonElement>("#toggle-indivisible-help");
+    const indivisibleHelpPanel = document.querySelector<HTMLDivElement>("#indivisible-help-panel");
+    const indivisibleHelpMeta =
+      toggleIndivisibleHelp?.querySelector<HTMLSpanElement>(".accordion-meta");
+    const indivisibleHelpForm = document.querySelector<HTMLFormElement>("#indivisible-help-form");
+    const indivisibleHelpMessage = document.querySelector<HTMLDivElement>("#indivisible-help-message");
+    const indivisibleHelpList = document.querySelector<HTMLDivElement>("#indivisible-help-list");
     const saveMessage = document.querySelector<HTMLDivElement>("#save-message");
     const designationSelect =
       form?.elements.namedItem("eligible_person_designation") as HTMLSelectElement | null;
@@ -963,6 +1172,10 @@ window.addEventListener("DOMContentLoaded", () => {
     const collapsedMetaText = "Kliknij, aby rozwinąć";
     const expandedMetaText = "Kliknij, aby zwinąć";
     const limitedAssistanceDesignations = new Set(["ZWOLNIONA", "NAJBLIZSZA_ZWOLNIONEJ"]);
+    const sharedHelpPageSize = 5;
+    const peoplePageSize = 20;
+    let sharedHelpCurrentPage = 1;
+    let peopleCurrentPage = 1;
     const isPublicPage =
       document.querySelector("#login-page") !== null || document.querySelector("#recover-page") !== null;
 
@@ -1007,6 +1220,40 @@ window.addEventListener("DOMContentLoaded", () => {
       personFormMeta.textContent = isOpen ? expandedMetaText : collapsedMetaText;
     }
     setPersonFormMeta(personPanel?.classList.contains("is-open") ?? false);
+
+    function setupAccordion(
+      toggle: HTMLButtonElement | null,
+      panel: HTMLDivElement | null,
+      meta: HTMLSpanElement | null
+    ) {
+      const setMeta = (isOpen: boolean) => {
+        if (meta) meta.textContent = isOpen ? expandedMetaText : collapsedMetaText;
+      };
+      setMeta(panel?.classList.contains("is-open") ?? false);
+      toggle?.addEventListener("click", () => {
+        if (!panel) return;
+        const isOpen = panel.classList.contains("is-open");
+        if (isOpen) {
+          panel.classList.remove("is-open");
+          setMeta(false);
+          panel.addEventListener(
+            "transitionend",
+            () => {
+              if (!panel.classList.contains("is-open")) {
+                panel.hidden = true;
+              }
+            },
+            { once: true }
+          );
+          return;
+        }
+
+        panel.hidden = false;
+        panel.classList.add("is-open");
+        setMeta(true);
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
 
     function setSaveMessage(text: string, variant: "success" | "error") {
       if (!saveMessage) return;
@@ -1487,6 +1734,7 @@ window.addEventListener("DOMContentLoaded", () => {
       "identity_document"
     ) as HTMLInputElement | null;
     let activePersonId: number | null = null;
+    let activePerson: Person | null = null;
     let currentReport: ReportDataset | null = null;
 
     attachPeselLiveValidation(peselInput);
@@ -1989,20 +2237,6 @@ window.addEventListener("DOMContentLoaded", () => {
           );
           return;
         }
-
-        const supportMonths = isExtensionApproved ? 12 : 6;
-        const supportDeadline = addMonths(releaseDate, supportMonths);
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        if (today > supportDeadline) {
-          setSaveMessage(
-            `Okres pomocy minął ${formatDatePl(
-              supportDeadline
-            )}. Dla tej osoby pomoc przysługuje przez ${supportMonths} miesiący od dnia zwolnienia.`,
-            "error"
-          );
-          return;
-        }
       }
 
       try {
@@ -2043,6 +2277,9 @@ window.addEventListener("DOMContentLoaded", () => {
         );
 
         await loadPersons(list);
+        peopleCurrentPage = 1;
+        applyPeopleFiltersAndPagination();
+        await loadSharedHelpPeople();
         form.reset();
         syncAssistanceExtensionField();
         setSaveMessage(
@@ -2112,25 +2349,244 @@ window.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    filterLastName?.addEventListener("input", () => {
+    function applyPeopleFiltersAndPagination() {
       if (!list) return;
-      const lastNameQuery = (filterLastName.value ?? "").trim().toLowerCase();
+      const lastNameQuery = (filterLastName?.value ?? "").trim().toLowerCase();
       const peselQuery = (filterPesel?.value ?? "").trim().toLowerCase();
-      applyFilters(list, lastNameQuery, peselQuery);
+      const result = applyFilters(list, lastNameQuery, peselQuery, {
+        page: peopleCurrentPage,
+        pageSize: peoplePageSize,
+        pageInfo: peoplePageInfo,
+        prevButton: peoplePrevPage,
+        nextButton: peopleNextPage,
+      });
+      peopleCurrentPage = result.currentPage;
+    }
+
+    filterLastName?.addEventListener("input", () => {
+      peopleCurrentPage = 1;
+      applyPeopleFiltersAndPagination();
     });
 
     filterPesel?.addEventListener("input", () => {
-      if (!list) return;
-      const lastNameQuery = (filterLastName?.value ?? "").trim().toLowerCase();
-      const peselQuery = (filterPesel.value ?? "").trim().toLowerCase();
-      applyFilters(list, lastNameQuery, peselQuery);
+      peopleCurrentPage = 1;
+      applyPeopleFiltersAndPagination();
     });
 
     clearFilters?.addEventListener("click", () => {
-      if (!list) return;
       if (filterLastName) filterLastName.value = "";
       if (filterPesel) filterPesel.value = "";
-      applyFilters(list, "", "");
+      peopleCurrentPage = 1;
+      applyPeopleFiltersAndPagination();
+    });
+
+    peoplePrevPage?.addEventListener("click", () => {
+      peopleCurrentPage = Math.max(1, peopleCurrentPage - 1);
+      applyPeopleFiltersAndPagination();
+    });
+
+    peopleNextPage?.addEventListener("click", () => {
+      peopleCurrentPage += 1;
+      applyPeopleFiltersAndPagination();
+    });
+
+    setupAccordion(toggleSharedHelp, sharedHelpPanel, sharedHelpMeta ?? null);
+    setupAccordion(toggleIndivisibleHelp, indivisibleHelpPanel, indivisibleHelpMeta ?? null);
+
+    sharedHelpForm?.addEventListener("input", updateSharedHelpSummary);
+    sharedHelpPeopleList?.addEventListener("change", () => {
+      updateSharedHelpSummary();
+    });
+    sharedHelpFilterName?.addEventListener("input", () => {
+      sharedHelpCurrentPage = 1;
+      applySharedHelpPeopleFilters();
+    });
+    sharedHelpFilterPesel?.addEventListener("input", () => {
+      sharedHelpCurrentPage = 1;
+      applySharedHelpPeopleFilters();
+    });
+    sharedHelpClearFilters?.addEventListener("click", () => {
+      if (sharedHelpFilterName) sharedHelpFilterName.value = "";
+      if (sharedHelpFilterPesel) sharedHelpFilterPesel.value = "";
+      sharedHelpCurrentPage = 1;
+      applySharedHelpPeopleFilters();
+    });
+    sharedHelpPrevPage?.addEventListener("click", () => {
+      sharedHelpCurrentPage = Math.max(1, sharedHelpCurrentPage - 1);
+      applySharedHelpPeopleFilters();
+    });
+    sharedHelpNextPage?.addEventListener("click", () => {
+      sharedHelpCurrentPage += 1;
+      applySharedHelpPeopleFilters();
+    });
+    sharedHelpClearSelection?.addEventListener("click", () => {
+      sharedHelpPeopleList
+        ?.querySelectorAll<HTMLInputElement>("input[name='shared_person_id']")
+        .forEach((input) => {
+          input.checked = false;
+        });
+      updateSharedHelpSummary();
+    });
+
+    sharedHelpForm?.addEventListener("reset", () => {
+      window.setTimeout(() => {
+        applySharedHelpPeopleFilters();
+        updateSharedHelpSummary();
+      }, 0);
+    });
+
+    sharedHelpForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!sharedHelpForm) return;
+
+      const formData = new FormData(sharedHelpForm);
+      const helpDate = String(formData.get("help_date") ?? "").trim();
+      const entryDate = String(formData.get("entry_date") ?? "").trim();
+      const helpType = String(formData.get("help_type") ?? "").trim();
+      const selectedTypeLabel = sharedHelpTypeSelect?.selectedOptions[0]?.textContent ?? "";
+      const helpAmountRaw = String(formData.get("help_amount") ?? "").trim();
+      const helpQuantityRaw = String(formData.get("help_quantity") ?? "").trim();
+      const amountValue = parseAmount(helpAmountRaw);
+      const quantityValue = parseAmount(helpQuantityRaw || "1") || 1;
+      const totalAmount = amountValue * quantityValue;
+      const selectedPersonIds = getSelectedSharedPersonIds();
+
+      if (!helpType) {
+        setSharedHelpMessage("Wybierz rodzaj wsparcia.", "error");
+        return;
+      }
+      if (!helpDate || !entryDate) {
+        setSharedHelpMessage("Uzupełnij datę udzielonej pomocy oraz datę wpisu.", "error");
+        return;
+      }
+      if (!isDateWithinAllowedRange(helpDate) || !isDateWithinAllowedRange(entryDate)) {
+        setSharedHelpMessage("Daty muszą być w zakresie od 01.01.1940 do 31.12.2050.", "error");
+        return;
+      }
+      if (totalAmount <= 0) {
+        setSharedHelpMessage("Podaj kwotę większą od zera.", "error");
+        return;
+      }
+      if (!selectedPersonIds.length) {
+        setSharedHelpMessage("Zaznacz co najmniej jedną osobę.", "error");
+        return;
+      }
+
+      const amountPerPerson = Math.round((totalAmount / selectedPersonIds.length) * 100) / 100;
+      const db = await getDb();
+      const selectedPersons = await db.select<Person[]>(
+        `SELECT id, first_name, last_name, eligible_person_designation, release_date, assistance_extension_approved
+         FROM authorized_persons
+         WHERE id IN (${selectedPersonIds.map(() => "?").join(",")})`,
+        selectedPersonIds
+      );
+      const invalidPersons = selectedPersons
+        .map((person) => {
+          const result = validateHelpDateForPerson(helpDate, person);
+          if (result.isValid) return null;
+          const fullName = `${person.first_name ?? ""} ${person.last_name ?? ""}`.trim() || `ID ${person.id}`;
+          return `${fullName}: ${result.message}`;
+        })
+        .filter((value): value is string => Boolean(value));
+      if (invalidPersons.length) {
+        setSharedHelpMessage(
+          `Nie można zapisać pomocy dla wybranej daty. ${invalidPersons.slice(0, 3).join(" ")}`,
+          "error"
+        );
+        return;
+      }
+      await ensureHelpTable();
+      const provider = currentUser.username;
+      for (const personId of selectedPersonIds) {
+        await db.execute(
+          `INSERT INTO person_help_entries (
+            event_uuid, person_id, help_date, help_type, help_type_label, help_amount, help_quantity, help_provider, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, datetime('now'))`,
+          [
+            createHelpEventUuid(),
+            personId,
+            helpDate,
+            helpType,
+            selectedTypeLabel || null,
+            amountPerPerson,
+            provider,
+            entryDate,
+          ]
+        );
+      }
+
+      sharedHelpForm.reset();
+      sharedHelpPeopleList
+        ?.querySelectorAll<HTMLInputElement>("input[name='shared_person_id']")
+        .forEach((input) => {
+          input.checked = false;
+        });
+      updateSharedHelpSummary();
+      setSharedHelpMessage(
+        `Dopisano pomoc do ${selectedPersonIds.length} osób. Kwota na osobę: ${formatAmount(amountPerPerson)}.`,
+        "success"
+      );
+    });
+
+    indivisibleHelpForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!indivisibleHelpForm) return;
+
+      const formData = new FormData(indivisibleHelpForm);
+      const helpDate = String(formData.get("help_date") ?? "").trim();
+      const entryDate = String(formData.get("entry_date") ?? "").trim();
+      const helpType = String(formData.get("help_type") ?? "").trim();
+      const helpTypeLabel =
+        indivisibleHelpForm.querySelector<HTMLSelectElement>("select[name='help_type']")?.selectedOptions[0]
+          ?.textContent ?? "";
+      const helpAmountRaw = String(formData.get("help_amount") ?? "").trim();
+      const helpQuantityRaw = String(formData.get("help_quantity") ?? "").trim();
+      const reason = String(formData.get("reason") ?? "").trim();
+      const amountValue = parseAmount(helpAmountRaw);
+      const quantityValue = parseAmount(helpQuantityRaw || "1") || 1;
+
+      if (!helpType) {
+        setIndivisibleHelpMessage("Wpisz rodzaj wsparcia.", "error");
+        return;
+      }
+      if (!helpDate || !entryDate) {
+        setIndivisibleHelpMessage("Uzupełnij datę udzielonej pomocy oraz datę wpisu.", "error");
+        return;
+      }
+      if (!isDateWithinAllowedRange(helpDate) || !isDateWithinAllowedRange(entryDate)) {
+        setIndivisibleHelpMessage("Daty muszą być w zakresie od 01.01.1940 do 31.12.2050.", "error");
+        return;
+      }
+      if (amountValue * quantityValue <= 0) {
+        setIndivisibleHelpMessage("Podaj kwotę większą od zera.", "error");
+        return;
+      }
+      if (!reason) {
+        setIndivisibleHelpMessage("Opisz, dlaczego pomoc nie może zostać podzielona.", "error");
+        return;
+      }
+
+      await ensureIndivisibleHelpTable();
+      const db = await getDb();
+      await db.execute(
+        `INSERT INTO indivisible_help_entries (
+          entry_uuid, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity, reason, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        [
+          createUuid(),
+          helpDate,
+          entryDate,
+          helpType,
+          helpTypeLabel || null,
+          amountValue,
+          quantityValue,
+          reason,
+        ]
+      );
+
+      indivisibleHelpForm.reset();
+      await loadIndivisibleHelpEntries();
+      setIndivisibleHelpMessage("Zapisano wpis pomocy niepodzielnej.", "success");
     });
 
     togglePersonForm?.addEventListener("click", () => {
@@ -2159,6 +2615,9 @@ window.addEventListener("DOMContentLoaded", () => {
     if (list) {
       try {
         await loadPersons(list);
+        applyPeopleFiltersAndPagination();
+        await loadSharedHelpPeople();
+        await loadIndivisibleHelpEntries();
       } catch (error) {
         console.error("Nie udało się wczytać listy osób:", error);
       }
@@ -2192,6 +2651,7 @@ window.addEventListener("DOMContentLoaded", () => {
         localStorage.setItem(SELECTED_PERSON_UUID_KEY, person.person_uuid);
       }
       activePersonId = person.id;
+      activePerson = person;
       try {
         await loadHelpEntries(person.id);
       } catch (error) {
@@ -2288,13 +2748,15 @@ window.addEventListener("DOMContentLoaded", () => {
 
         try {
           const db = await getDb();
+          const updateWhereColumn = updated.person_uuid ? "person_uuid" : "id";
+          const updateWhereValue = updated.person_uuid || updated.id;
           await db.execute(
             `UPDATE authorized_persons SET
               request_number = ?, request_date = ?, assistance_extension_approved = ?, eligible_person_designation = ?, first_name = ?, last_name = ?, citizenship = ?, pesel = ?, birth_date = ?, phone = ?,
               email = ?, gender = ?, ukr_status = ?, address = ?, identity_document = ?, marital_status = ?,
               disability = ?, funds_on_release = ?, detention_facility = ?, incarceration_date = ?, release_date = ?,
               info_source = ?, correspondence_assistance = ?, assistance_needed = ?
-            WHERE person_uuid = ?`,
+            WHERE ${updateWhereColumn} = ?`,
             [
               updated.request_number || null,
               updated.request_date || null,
@@ -2320,12 +2782,18 @@ window.addEventListener("DOMContentLoaded", () => {
               updated.info_source || null,
               updated.correspondence_assistance ?? 0,
               updated.assistance_needed || null,
-              updated.person_uuid ?? "",
+              updateWhereValue,
             ]
           );
 
+          const refreshedRows = updated.person_uuid
+            ? await db.select<Person[]>("SELECT * FROM authorized_persons WHERE person_uuid = ? LIMIT 1", [
+                updated.person_uuid,
+              ])
+            : await db.select<Person[]>("SELECT * FROM authorized_persons WHERE id = ? LIMIT 1", [updated.id]);
+          const refreshed = refreshedRows[0] ?? updated;
           renderDetail(
-            updated,
+            refreshed,
             detailName,
             detailMeta,
             detailPesel,
@@ -2333,6 +2801,10 @@ window.addEventListener("DOMContentLoaded", () => {
             detailBasic,
             detailCase
           );
+          activePerson = refreshed;
+          fillEditForm(editForm, refreshed);
+          syncEditAssistanceExtensionField();
+          refreshEditIdentityLock();
           editForm.hidden = true;
           showAppToast("Dane osoby zostały zapisane.", "success");
         } catch (error) {
@@ -2351,6 +2823,23 @@ window.addEventListener("DOMContentLoaded", () => {
     function formatAmount(value: number) {
       return `${value.toFixed(2).replace(".", ",")} zł`;
     }
+
+    function populateHelpTypeSelect(select: HTMLSelectElement | null) {
+      if (!select) return;
+      const currentValue = select.value;
+      select.innerHTML = '<option value="">Wybierz</option>';
+      HELP_TYPE_OPTIONS.forEach(([value, label]) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        select.append(option);
+      });
+      select.value = currentValue;
+    }
+
+    document
+      .querySelectorAll<HTMLSelectElement>("select[name='help_type'], #shared-help-type")
+      .forEach(populateHelpTypeSelect);
 
     function setHelpFormMode(mode: "create" | "edit") {
       if (helpFormTitle) {
@@ -2382,6 +2871,176 @@ window.addEventListener("DOMContentLoaded", () => {
       }
       helpProviderSelect.innerHTML = options.join("");
       helpProviderSelect.value = selectedProvider;
+    }
+
+    function setSharedHelpMessage(text: string, variant: "success" | "error") {
+      if (!sharedHelpMessage) return;
+      sharedHelpMessage.textContent = text;
+      sharedHelpMessage.hidden = false;
+      sharedHelpMessage.classList.remove("success", "error");
+      sharedHelpMessage.classList.add(variant);
+      showAppToast(text, variant);
+    }
+
+    function setIndivisibleHelpMessage(text: string, variant: "success" | "error") {
+      if (!indivisibleHelpMessage) return;
+      indivisibleHelpMessage.textContent = text;
+      indivisibleHelpMessage.hidden = false;
+      indivisibleHelpMessage.classList.remove("success", "error");
+      indivisibleHelpMessage.classList.add(variant);
+      showAppToast(text, variant);
+    }
+
+    async function loadSharedHelpPeople() {
+      if (!sharedHelpPeopleList) return;
+      const db = await getDb();
+      const persons = await db.select<Person[]>(
+        "SELECT id, person_uuid, first_name, last_name, pesel FROM authorized_persons ORDER BY last_name COLLATE NOCASE ASC, first_name COLLATE NOCASE ASC"
+      );
+      sharedHelpPeopleList.innerHTML = "";
+      if (!persons.length) {
+        sharedHelpPeopleList.innerHTML = `<div class="shared-person-row muted">Brak zapisanych osób</div>`;
+        updateSharedHelpSummary();
+        return;
+      }
+      persons.forEach((person) => {
+        const label = document.createElement("label");
+        label.className = "shared-person-row";
+        const fullName = `${person.first_name ?? ""} ${person.last_name ?? ""}`.trim() || "Bez imienia";
+        label.dataset.fullName = fullName;
+        label.dataset.pesel = person.pesel ?? "";
+        label.innerHTML = `
+          <input type="checkbox" name="shared_person_id" value="${person.id}" />
+          <span>${escapeHtml(fullName)}</span>
+          <span>${escapeHtml(person.pesel ?? "-")}</span>
+        `;
+        sharedHelpPeopleList.append(label);
+      });
+      applySharedHelpPeopleFilters();
+      updateSharedHelpSummary();
+    }
+
+    function getSelectedSharedPersonIds() {
+      if (!sharedHelpPeopleList) return [];
+      return Array.from(
+        sharedHelpPeopleList.querySelectorAll<HTMLInputElement>("input[name='shared_person_id']:checked")
+      )
+        .map((input) => Number(input.value))
+        .filter((value) => Number.isFinite(value) && value > 0);
+    }
+
+    function applySharedHelpPeopleFilters() {
+      if (!sharedHelpPeopleList) return;
+      const nameQuery = (sharedHelpFilterName?.value ?? "").trim().toLowerCase();
+      const peselQuery = (sharedHelpFilterPesel?.value ?? "").trim().toLowerCase();
+      const matchingRows: HTMLLabelElement[] = [];
+
+      sharedHelpPeopleList.querySelectorAll<HTMLLabelElement>(".shared-person-row").forEach((row) => {
+        if (row.classList.contains("muted")) return;
+        const fullName = (row.dataset.fullName ?? "").toLowerCase();
+        const pesel = (row.dataset.pesel ?? "").toLowerCase();
+        const matchesName = !nameQuery || fullName.includes(nameQuery);
+        const matchesPesel = !peselQuery || pesel.includes(peselQuery);
+        if (matchesName && matchesPesel) {
+          matchingRows.push(row);
+        }
+        row.hidden = true;
+      });
+
+      let emptyRow = sharedHelpPeopleList.querySelector<HTMLDivElement>("#shared-help-no-results");
+      if (matchingRows.length === 0 && (nameQuery || peselQuery)) {
+        if (!emptyRow) {
+          emptyRow = document.createElement("div");
+          emptyRow.id = "shared-help-no-results";
+          emptyRow.className = "shared-person-row muted";
+          emptyRow.textContent = "Brak wyników dla podanych filtrów";
+          sharedHelpPeopleList.append(emptyRow);
+        }
+      } else if (emptyRow) {
+        emptyRow.remove();
+      }
+
+      const totalPages = Math.max(1, Math.ceil(matchingRows.length / sharedHelpPageSize));
+      sharedHelpCurrentPage = Math.min(Math.max(1, sharedHelpCurrentPage), totalPages);
+      const startIndex = (sharedHelpCurrentPage - 1) * sharedHelpPageSize;
+      matchingRows.slice(startIndex, startIndex + sharedHelpPageSize).forEach((row) => {
+        row.hidden = false;
+      });
+      if (sharedHelpPageInfo) {
+        sharedHelpPageInfo.textContent = matchingRows.length
+          ? `Strona ${sharedHelpCurrentPage} z ${totalPages}`
+          : "Strona 0 z 0";
+      }
+      if (sharedHelpPrevPage) {
+        sharedHelpPrevPage.disabled = sharedHelpCurrentPage <= 1 || matchingRows.length === 0;
+      }
+      if (sharedHelpNextPage) {
+        sharedHelpNextPage.disabled = sharedHelpCurrentPage >= totalPages || matchingRows.length === 0;
+      }
+    }
+
+    function updateSharedHelpSummary() {
+      if (!sharedHelpForm || !sharedHelpSummary) return;
+      const amount = parseAmount(
+        String((sharedHelpForm.elements.namedItem("help_amount") as HTMLInputElement | null)?.value ?? "")
+      );
+      const quantity =
+        parseAmount(
+          String((sharedHelpForm.elements.namedItem("help_quantity") as HTMLInputElement | null)?.value ?? "1")
+        ) || 1;
+      const totalAmount = amount * quantity;
+      const selectedCount = getSelectedSharedPersonIds().length;
+      const amountPerPerson = selectedCount > 0 ? totalAmount / selectedCount : 0;
+      const summaryTotal = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='total']");
+      const summaryPeople = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='people']");
+      const summaryPerPerson = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='per-person']");
+      if (summaryTotal) summaryTotal.textContent = formatAmount(totalAmount);
+      if (summaryPeople) summaryPeople.textContent = String(selectedCount);
+      if (summaryPerPerson) summaryPerPerson.textContent = selectedCount ? formatAmount(amountPerPerson) : "-";
+      if (sharedHelpSelectedCount) {
+        sharedHelpSelectedCount.textContent = `Zaznaczono: ${selectedCount}`;
+      }
+    }
+
+    async function loadIndivisibleHelpEntries() {
+      if (!indivisibleHelpList) return;
+      await ensureIndivisibleHelpTable();
+      const db = await getDb();
+      const entries = await db.select<
+        Array<{
+          id: number;
+          help_date?: string;
+          entry_date?: string;
+          help_type?: string;
+          help_type_label?: string;
+          help_amount?: number;
+          help_quantity?: number;
+          reason?: string;
+        }>
+      >(
+        `SELECT id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity, reason
+         FROM indivisible_help_entries
+         ORDER BY COALESCE(entry_date, help_date, created_at) DESC, id DESC
+         LIMIT 20`
+      );
+      if (!entries.length) {
+        indivisibleHelpList.innerHTML = `<div class="indivisible-help-row muted"><span>Brak wpisów</span><span>-</span><span>-</span><span>-</span></div>`;
+        return;
+      }
+      indivisibleHelpList.innerHTML = entries
+        .map((entry) => {
+          const amount = Number(entry.help_amount ?? 0);
+          const quantity = Number(entry.help_quantity ?? 1);
+          return `
+            <div class="indivisible-help-row">
+              <span>${escapeHtml(entry.help_date || entry.entry_date || "-")}</span>
+              <span>${escapeHtml(entry.help_type_label || entry.help_type || "-")}</span>
+              <span>${formatAmount(amount * quantity)}</span>
+              <span>${escapeHtml(entry.reason || "-")}</span>
+            </div>
+          `;
+        })
+        .join("");
     }
 
     function resetHelpForm() {
@@ -2616,6 +3275,14 @@ window.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
+      if (activePerson) {
+        const supportValidation = validateHelpDateForPerson(helpDate, activePerson);
+        if (!supportValidation.isValid) {
+          showAppToast(supportValidation.message ?? "Data udzielonej pomocy jest poza okresem uprawnienia.", "error");
+          return;
+        }
+      }
+
       if (helpIdRaw) {
         await db.execute(
           `UPDATE person_help_entries
@@ -2708,6 +3375,17 @@ window.addEventListener("DOMContentLoaded", () => {
       const contractNumber = sanitizeFileNamePart(orgRows[0]?.contract_number?.trim() || "BRAK_UMOWY");
       const { monthLabel, yearLabel } = getPreviousMonthDescriptor();
       return `${contractNumber}_WYKAZ_OSOB_${monthLabel}_${yearLabel}`;
+    }
+
+    async function buildDatabaseFileBaseName() {
+      await ensureOrgTable();
+      const db = await getDb();
+      const orgRows = await db.select<OrgSettings[]>(
+        "SELECT contract_number FROM organization_settings WHERE id = 1 LIMIT 1"
+      );
+      const contractNumber = sanitizeFileNamePart(orgRows[0]?.contract_number?.trim() || "BRAK_UMOWY");
+      const { monthLabel, yearLabel } = getPreviousMonthDescriptor();
+      return `${contractNumber}_BAZA_DANYCH_${monthLabel}_${yearLabel}`;
     }
 
     function toBase64(bytes: Uint8Array) {
@@ -3382,7 +4060,7 @@ window.addEventListener("DOMContentLoaded", () => {
       dbExportButton?.addEventListener("click", async () => {
         clearInlineMessage(backupExportMsg);
         try {
-          const fileBaseName = await buildReportsFileBaseName();
+          const fileBaseName = await buildDatabaseFileBaseName();
           const selectedPath = await save({
             title: "Zapisz kopię bazy danych",
             defaultPath: `${fileBaseName}.db`,
@@ -3403,7 +4081,7 @@ window.addEventListener("DOMContentLoaded", () => {
       dbExportEncryptedButton?.addEventListener("click", async () => {
         clearInlineMessage(backupExportMsg);
         try {
-          const fileBaseName = await buildReportsFileBaseName();
+          const fileBaseName = await buildDatabaseFileBaseName();
           let selectedPath = await save({
             title: "Zapisz zaszyfrowaną bazę do wysyłki",
             defaultPath: `${fileBaseName}.7z`,
@@ -3449,7 +4127,7 @@ window.addEventListener("DOMContentLoaded", () => {
       const exportDbToPasswordArchive = async (kind: "rar" | "7z") => {
         clearInlineMessage(backupExportMsg);
         try {
-          const fileBaseName = await buildReportsFileBaseName();
+          const fileBaseName = await buildDatabaseFileBaseName();
           const password = await promptArchivePassword({
             title: kind === "rar" ? "Pakowanie bazy do pliku RAR" : "Pakowanie bazy do pliku 7Z",
             hint:
@@ -3477,7 +4155,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
           const result = await invoke<PasswordArchiveResult>(
             kind === "rar" ? "create_password_protected_rar" : "create_password_protected_7z",
-            { outPath: selectedPath, password, dbPath: getActiveDbPath() }
+            {
+              outPath: selectedPath,
+              password,
+              dbPath: getActiveDbPath(),
+              archiveEntryName: `${fileBaseName}.db`,
+            }
           );
           setInlineMessage(
             backupExportMsg,
@@ -3904,8 +4587,8 @@ window.addEventListener("DOMContentLoaded", () => {
         .map((record) => {
           const title = escapeHtml(record.contract_number?.trim() || "(bez numeru umowy)");
           const details =
-            [record.org_name?.trim(), record.center_name?.trim(), record.db_path].filter(Boolean).join(" • ") ||
-            record.db_path;
+            [record.org_name?.trim(), record.center_name?.trim()].filter(Boolean).join(" • ") ||
+            "brak danych organizacji";
           const detailsSafe = escapeHtml(details);
           const dbPathSafe = escapeHtml(record.db_path);
           return `
