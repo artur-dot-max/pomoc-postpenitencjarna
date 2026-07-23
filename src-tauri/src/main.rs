@@ -1,4 +1,4 @@
-﻿#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod backup_crypto;
 
@@ -35,6 +35,7 @@ struct PersonRow {
     correspondence_assistance: Option<i64>,
     first_name: Option<String>,
     last_name: Option<String>,
+    eligible_person_designation: Option<String>,
     citizenship: Option<String>,
     pesel: Option<String>,
     birth_date: Option<String>,
@@ -61,11 +62,13 @@ struct HelpRow {
     event_uuid: Option<String>,
     person_id: i64,
     help_date: Option<String>,
+    entry_date: Option<String>,
     help_type: Option<String>,
     help_type_label: Option<String>,
     help_amount: Option<f64>,
     help_quantity: Option<f64>,
     help_provider: Option<String>,
+    note: Option<String>,
     created_at: Option<String>,
     updated_at: Option<String>,
 }
@@ -100,11 +103,13 @@ CREATE TABLE IF NOT EXISTS person_help_entries (
   event_uuid      TEXT UNIQUE,
   person_id       INTEGER NOT NULL,
   help_date       TEXT,
+  entry_date      TEXT,
   help_type       TEXT,
   help_type_label TEXT,
   help_amount     REAL,
   help_quantity   REAL,
   help_provider   TEXT,
+  note            TEXT,
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 )
@@ -269,8 +274,8 @@ fn reset_password_with_recovery_code(
     }
 
     let db_path = resolve_contract_db_path(&app, db_path)?;
-    let mut conn =
-        Connection::open(&db_path).map_err(|e| format!("Nie udało się otworzyć bazy danych: {e}"))?;
+    let mut conn = Connection::open(&db_path)
+        .map_err(|e| format!("Nie udało się otworzyć bazy danych: {e}"))?;
     ensure_users_table(&conn)
         .map_err(|e| format!("Nie udało się przygotować tabeli użytkowników: {e}"))?;
     ensure_recovery_code_available(&app, &normalized_input)?;
@@ -327,7 +332,11 @@ fn resolve_contract_db_path(
 
     let raw = db_path.unwrap_or_else(|| "app.db".to_string());
     let trimmed = raw.trim();
-    let relative = if trimmed.is_empty() { "app.db" } else { trimmed };
+    let relative = if trimmed.is_empty() {
+        "app.db"
+    } else {
+        trimmed
+    };
     let candidate = PathBuf::from(relative);
     if candidate.is_absolute() || candidate.components().count() != 1 {
         return Err("Nieprawidłowa ścieżka bazy danych.".to_string());
@@ -346,8 +355,8 @@ fn create_database_snapshot(source_path: &PathBuf) -> Result<PathBuf, String> {
         .ok_or_else(|| "Nie udało się ustalić katalogu bazy danych.".to_string())?;
     let snapshot_path = parent.join(format!("export-snapshot-{}.db", now_millis()));
 
-    let source_conn =
-        Connection::open(source_path).map_err(|e| format!("Nie udało się otworzyć bazy danych: {e}"))?;
+    let source_conn = Connection::open(source_path)
+        .map_err(|e| format!("Nie udało się otworzyć bazy danych: {e}"))?;
     let snapshot_sql = format!(
         "VACUUM INTO '{}'",
         sqlite_string_literal(&snapshot_path.to_string_lossy())
@@ -361,7 +370,11 @@ fn create_database_snapshot(source_path: &PathBuf) -> Result<PathBuf, String> {
 
 fn validate_export_file_name(file_name: &str, default_name: &str) -> Result<String, String> {
     let trimmed = file_name.trim();
-    let candidate = if trimmed.is_empty() { default_name } else { trimmed };
+    let candidate = if trimmed.is_empty() {
+        default_name
+    } else {
+        trimmed
+    };
     let path = Path::new(candidate);
     if path.is_absolute() || path.components().count() != 1 {
         return Err("Nieprawidłowa nazwa pliku w archiwum.".to_string());
@@ -390,8 +403,8 @@ fn create_database_snapshot_with_file_name(
     let snapshot_file_name = validate_export_file_name(file_name, "baza_danych.db")?;
     let snapshot_path = temp_dir.join(snapshot_file_name);
 
-    let source_conn =
-        Connection::open(source_path).map_err(|e| format!("Nie udało się otworzyć bazy danych: {e}"))?;
+    let source_conn = Connection::open(source_path)
+        .map_err(|e| format!("Nie udało się otworzyć bazy danych: {e}"))?;
     let snapshot_sql = format!(
         "VACUUM INTO '{}'",
         sqlite_string_literal(&snapshot_path.to_string_lossy())
@@ -444,14 +457,17 @@ fn recovery_registry_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 fn open_recovery_registry(app: &tauri::AppHandle) -> Result<Connection, String> {
     let path = recovery_registry_path(app)?;
-    let conn =
-        Connection::open(&path).map_err(|e| format!("Nie udało się otworzyć rejestru kodów resetu: {e}"))?;
+    let conn = Connection::open(&path)
+        .map_err(|e| format!("Nie udało się otworzyć rejestru kodów resetu: {e}"))?;
     ensure_used_recovery_codes_table(&conn)
         .map_err(|e| format!("Nie udało się przygotować rejestru kodów resetu: {e}"))?;
     Ok(conn)
 }
 
-fn ensure_recovery_code_available(app: &tauri::AppHandle, normalized_input: &str) -> Result<(), String> {
+fn ensure_recovery_code_available(
+    app: &tauri::AppHandle,
+    normalized_input: &str,
+) -> Result<(), String> {
     let conn = open_recovery_registry(app)?;
     let already_used: i64 = conn
         .query_row(
@@ -495,7 +511,11 @@ fn source_table_exists(source: &Connection, table_name: &str) -> rusqlite::Resul
     Ok(count > 0)
 }
 
-fn source_column_exists(source: &Connection, table_name: &str, column_name: &str) -> rusqlite::Result<bool> {
+fn source_column_exists(
+    source: &Connection,
+    table_name: &str,
+    column_name: &str,
+) -> rusqlite::Result<bool> {
     let mut stmt = source.prepare(&format!("PRAGMA table_info({table_name})"))?;
     let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
     for column in columns {
@@ -510,10 +530,15 @@ fn read_source_persons(source: &Connection) -> rusqlite::Result<Vec<PersonRow>> 
     let has_person_uuid = source_column_exists(source, "authorized_persons", "person_uuid")?;
     let has_request_number = source_column_exists(source, "authorized_persons", "request_number")?;
     let has_request_date = source_column_exists(source, "authorized_persons", "request_date")?;
-    let has_assistance_extension =
-        source_column_exists(source, "authorized_persons", "assistance_extension_approved")?;
+    let has_assistance_extension = source_column_exists(
+        source,
+        "authorized_persons",
+        "assistance_extension_approved",
+    )?;
     let has_correspondence_assistance =
         source_column_exists(source, "authorized_persons", "correspondence_assistance")?;
+    let has_eligible_person_designation =
+        source_column_exists(source, "authorized_persons", "eligible_person_designation")?;
     let request_date_select = if has_request_date {
         "request_date"
     } else {
@@ -534,6 +559,11 @@ fn read_source_persons(source: &Connection) -> rusqlite::Result<Vec<PersonRow>> 
     } else {
         "0 AS correspondence_assistance"
     };
+    let eligible_person_designation_select = if has_eligible_person_designation {
+        "eligible_person_designation"
+    } else {
+        "NULL AS eligible_person_designation"
+    };
     let person_uuid_select = if has_person_uuid {
         "person_uuid"
     } else {
@@ -542,7 +572,7 @@ fn read_source_persons(source: &Connection) -> rusqlite::Result<Vec<PersonRow>> 
     let sql = format!(
         r#"
         SELECT
-          id, {request_number_select}, {request_date_select}, {assistance_extension_select}, {correspondence_assistance_select}, first_name, last_name, citizenship, pesel, birth_date, phone, email, gender,
+          id, {request_number_select}, {request_date_select}, {assistance_extension_select}, {correspondence_assistance_select}, first_name, last_name, {eligible_person_designation_select}, citizenship, pesel, birth_date, phone, email, gender,
           {person_uuid_select},
           ukr_status, address, identity_document, marital_status, disability, funds_on_release,
           detention_facility, incarceration_date, release_date, info_source, assistance_needed,
@@ -561,25 +591,26 @@ fn read_source_persons(source: &Connection) -> rusqlite::Result<Vec<PersonRow>> 
             correspondence_assistance: row.get(4)?,
             first_name: row.get(5)?,
             last_name: row.get(6)?,
-            citizenship: row.get(7)?,
-            pesel: row.get(8)?,
-            birth_date: row.get(9)?,
-            phone: row.get(10)?,
-            email: row.get(11)?,
-            gender: row.get(12)?,
-            person_uuid: row.get(13)?,
-            ukr_status: row.get(14)?,
-            address: row.get(15)?,
-            identity_document: row.get(16)?,
-            marital_status: row.get(17)?,
-            disability: row.get(18)?,
-            funds_on_release: row.get(19)?,
-            detention_facility: row.get(20)?,
-            incarceration_date: row.get(21)?,
-            release_date: row.get(22)?,
-            info_source: row.get(23)?,
-            assistance_needed: row.get(24)?,
-            created_at: row.get(25)?,
+            eligible_person_designation: row.get(7)?,
+            citizenship: row.get(8)?,
+            pesel: row.get(9)?,
+            birth_date: row.get(10)?,
+            phone: row.get(11)?,
+            email: row.get(12)?,
+            gender: row.get(13)?,
+            person_uuid: row.get(14)?,
+            ukr_status: row.get(15)?,
+            address: row.get(16)?,
+            identity_document: row.get(17)?,
+            marital_status: row.get(18)?,
+            disability: row.get(19)?,
+            funds_on_release: row.get(20)?,
+            detention_facility: row.get(21)?,
+            incarceration_date: row.get(22)?,
+            release_date: row.get(23)?,
+            info_source: row.get(24)?,
+            assistance_needed: row.get(25)?,
+            created_at: row.get(26)?,
         })
     })?;
     rows.collect()
@@ -588,17 +619,25 @@ fn read_source_persons(source: &Connection) -> rusqlite::Result<Vec<PersonRow>> 
 fn read_source_help(source: &Connection) -> rusqlite::Result<Vec<HelpRow>> {
     source.execute(ENSURE_HELP_TABLE_SQL, [])?;
     let has_event_uuid = source_column_exists(source, "person_help_entries", "event_uuid")?;
+    let has_entry_date = source_column_exists(source, "person_help_entries", "entry_date")?;
+    let has_note = source_column_exists(source, "person_help_entries", "note")?;
     let event_uuid_select = if has_event_uuid {
         "event_uuid"
     } else {
         "NULL AS event_uuid"
     };
+    let entry_date_select = if has_entry_date {
+        "entry_date"
+    } else {
+        "NULL AS entry_date"
+    };
+    let note_select = if has_note { "note" } else { "NULL AS note" };
     let mut stmt = source.prepare(
         &format!(
             r#"
         SELECT
-          id, {event_uuid_select}, person_id, help_date, help_type, help_type_label, help_amount, help_quantity,
-          help_provider, created_at, updated_at
+          id, {event_uuid_select}, person_id, help_date, {entry_date_select}, help_type, help_type_label, help_amount, help_quantity,
+          help_provider, {note_select}, created_at, updated_at
         FROM person_help_entries
         ORDER BY id
         "#,
@@ -610,20 +649,26 @@ fn read_source_help(source: &Connection) -> rusqlite::Result<Vec<HelpRow>> {
             event_uuid: row.get(1)?,
             person_id: row.get(2)?,
             help_date: row.get(3)?,
-            help_type: row.get(4)?,
-            help_type_label: row.get(5)?,
-            help_amount: row.get(6)?,
-            help_quantity: row.get(7)?,
-            help_provider: row.get(8)?,
-            created_at: row.get(9)?,
-            updated_at: row.get(10)?,
+            entry_date: row.get(4)?,
+            help_type: row.get(5)?,
+            help_type_label: row.get(6)?,
+            help_amount: row.get(7)?,
+            help_quantity: row.get(8)?,
+            help_provider: row.get(9)?,
+            note: row.get(10)?,
+            created_at: row.get(11)?,
+            updated_at: row.get(12)?,
         })
     })?;
     rows.collect()
 }
 
 fn read_source_org(source: &Connection) -> rusqlite::Result<Option<OrgRow>> {
-    let has_contract_number = source_column_exists(source, "organization_settings", "contract_number")?;
+    if !source_table_exists(source, "organization_settings")? {
+        return Ok(None);
+    }
+    let has_contract_number =
+        source_column_exists(source, "organization_settings", "contract_number")?;
     let contract_number_select = if has_contract_number {
         "contract_number"
     } else {
@@ -658,14 +703,34 @@ fn read_source_org(source: &Connection) -> rusqlite::Result<Option<OrgRow>> {
 
 fn read_source_users(source: &Connection) -> rusqlite::Result<Vec<UserImportRow>> {
     if !source_table_exists(source, "users")? {
-      return Ok(Vec::new());
+        return Ok(Vec::new());
     }
+    let has_first_name = source_column_exists(source, "users", "first_name")?;
+    let has_last_name = source_column_exists(source, "users", "last_name")?;
+    let has_position = source_column_exists(source, "users", "position")?;
+    let first_name_select = if has_first_name {
+        "first_name"
+    } else {
+        "NULL AS first_name"
+    };
+    let last_name_select = if has_last_name {
+        "last_name"
+    } else {
+        "NULL AS last_name"
+    };
+    let position_select = if has_position {
+        "position"
+    } else {
+        "NULL AS position"
+    };
     let mut stmt = source.prepare(
-        r#"
-        SELECT id, username, password_hash, role, is_active, first_name, last_name, position
+        &format!(
+            r#"
+        SELECT id, username, password_hash, role, is_active, {first_name_select}, {last_name_select}, {position_select}
         FROM users
         ORDER BY id
         "#,
+        ),
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(UserImportRow {
@@ -694,6 +759,7 @@ fn ensure_target_schema(target: &Transaction<'_>) -> rusqlite::Result<()> {
           correspondence_assistance INTEGER NOT NULL DEFAULT 0,
           first_name                TEXT NOT NULL,
           last_name                 TEXT NOT NULL,
+          eligible_person_designation TEXT,
           citizenship               TEXT,
           pesel                     TEXT,
           birth_date                TEXT,
@@ -746,6 +812,9 @@ fn ensure_target_schema(target: &Transaction<'_>) -> rusqlite::Result<()> {
     let mut has_correspondence_assistance = false;
     let mut has_person_uuid = false;
     let mut has_request_number = false;
+    let mut has_request_date = false;
+    let mut has_assistance_extension = false;
+    let mut has_eligible_person_designation = false;
     for column in columns {
         let column_name = column?;
         if column_name == "correspondence_assistance" {
@@ -757,6 +826,15 @@ fn ensure_target_schema(target: &Transaction<'_>) -> rusqlite::Result<()> {
         if column_name == "request_number" {
             has_request_number = true;
         }
+        if column_name == "request_date" {
+            has_request_date = true;
+        }
+        if column_name == "assistance_extension_approved" {
+            has_assistance_extension = true;
+        }
+        if column_name == "eligible_person_designation" {
+            has_eligible_person_designation = true;
+        }
     }
     if !has_correspondence_assistance {
         target.execute(
@@ -765,10 +843,38 @@ fn ensure_target_schema(target: &Transaction<'_>) -> rusqlite::Result<()> {
         )?;
     }
     if !has_person_uuid {
-        target.execute("ALTER TABLE authorized_persons ADD COLUMN person_uuid TEXT", [])?;
+        target.execute(
+            "ALTER TABLE authorized_persons ADD COLUMN person_uuid TEXT",
+            [],
+        )?;
     }
     if !has_request_number {
-        target.execute("ALTER TABLE authorized_persons ADD COLUMN request_number TEXT", [])?;
+        target.execute(
+            "ALTER TABLE authorized_persons ADD COLUMN request_number TEXT",
+            [],
+        )?;
+    }
+    if !has_request_date {
+        target.execute(
+            "ALTER TABLE authorized_persons ADD COLUMN request_date TEXT",
+            [],
+        )?;
+        target.execute(
+            "UPDATE authorized_persons SET request_date = substr(created_at, 1, 10) WHERE request_date IS NULL",
+            [],
+        )?;
+    }
+    if !has_assistance_extension {
+        target.execute(
+            "ALTER TABLE authorized_persons ADD COLUMN assistance_extension_approved INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !has_eligible_person_designation {
+        target.execute(
+            "ALTER TABLE authorized_persons ADD COLUMN eligible_person_designation TEXT",
+            [],
+        )?;
     }
     let mut missing_uuid_stmt = target.prepare(
         "SELECT id FROM authorized_persons WHERE person_uuid IS NULL OR TRIM(COALESCE(person_uuid, '')) = ''",
@@ -785,7 +891,10 @@ fn ensure_target_schema(target: &Transaction<'_>) -> rusqlite::Result<()> {
             params![create_person_uuid(), person_id],
         )?;
     }
-    target.execute("DROP INDEX IF EXISTS idx_authorized_persons_pesel_request_date_unique", [])?;
+    target.execute(
+        "DROP INDEX IF EXISTS idx_authorized_persons_pesel_request_date_unique",
+        [],
+    )?;
     target.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_authorized_persons_person_uuid_unique ON authorized_persons(person_uuid) WHERE person_uuid IS NOT NULL AND TRIM(COALESCE(person_uuid, '')) <> ''",
         [],
@@ -794,14 +903,34 @@ fn ensure_target_schema(target: &Transaction<'_>) -> rusqlite::Result<()> {
     let mut help_stmt = target.prepare("PRAGMA table_info(person_help_entries)")?;
     let help_columns = help_stmt.query_map([], |row| row.get::<_, String>(1))?;
     let mut has_event_uuid = false;
+    let mut has_entry_date = false;
+    let mut has_note = false;
     for column in help_columns {
-        if column? == "event_uuid" {
+        let column_name = column?;
+        if column_name == "event_uuid" {
             has_event_uuid = true;
-            break;
+        }
+        if column_name == "entry_date" {
+            has_entry_date = true;
+        }
+        if column_name == "note" {
+            has_note = true;
         }
     }
     if !has_event_uuid {
-        target.execute("ALTER TABLE person_help_entries ADD COLUMN event_uuid TEXT", [])?;
+        target.execute(
+            "ALTER TABLE person_help_entries ADD COLUMN event_uuid TEXT",
+            [],
+        )?;
+    }
+    if !has_entry_date {
+        target.execute(
+            "ALTER TABLE person_help_entries ADD COLUMN entry_date TEXT",
+            [],
+        )?;
+    }
+    if !has_note {
+        target.execute("ALTER TABLE person_help_entries ADD COLUMN note TEXT", [])?;
     }
     target.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_person_help_entries_event_uuid ON person_help_entries(event_uuid)",
@@ -845,11 +974,11 @@ fn import_replace(
         target.execute(
             r#"
             INSERT INTO authorized_persons (
-              id, person_uuid, request_number, request_date, assistance_extension_approved, correspondence_assistance, first_name, last_name, citizenship, pesel, birth_date, phone, email, gender,
+              id, person_uuid, request_number, request_date, assistance_extension_approved, correspondence_assistance, first_name, last_name, eligible_person_designation, citizenship, pesel, birth_date, phone, email, gender,
               ukr_status, address, identity_document, marital_status, disability, funds_on_release,
               detention_facility, incarceration_date, release_date, info_source, assistance_needed,
               created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             params![
                 person.id,
@@ -864,6 +993,7 @@ fn import_replace(
                 person.correspondence_assistance.unwrap_or(0),
                 person.first_name,
                 person.last_name,
+                person.eligible_person_designation,
                 person.citizenship,
                 person.pesel,
                 person.birth_date,
@@ -890,20 +1020,22 @@ fn import_replace(
         target.execute(
             r#"
             INSERT INTO person_help_entries (
-              id, event_uuid, person_id, help_date, help_type, help_type_label, help_amount, help_quantity,
-              help_provider, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              id, event_uuid, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity,
+              help_provider, note, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             params![
                 help.id,
                 help.event_uuid,
                 help.person_id,
                 help.help_date,
+                help.entry_date,
                 help.help_type,
                 help.help_type_label,
                 help.help_amount,
                 help.help_quantity,
                 help.help_provider,
+                help.note,
                 help.created_at,
                 help.updated_at,
             ],
@@ -971,6 +1103,36 @@ fn import_append(
     let mut imported_persons = 0usize;
     let mut skipped_duplicate_persons = 0usize;
 
+    fn fill_missing_person_fields(
+        target: &Transaction<'_>,
+        existing_id: i64,
+        person: &PersonRow,
+    ) -> rusqlite::Result<()> {
+        target.execute(
+            r#"
+            UPDATE authorized_persons
+            SET
+              person_uuid = COALESCE(NULLIF(TRIM(person_uuid), ''), ?),
+              request_number = COALESCE(NULLIF(TRIM(request_number), ''), ?),
+              request_date = COALESCE(NULLIF(TRIM(request_date), ''), ?),
+              eligible_person_designation = COALESCE(NULLIF(TRIM(eligible_person_designation), ''), ?),
+              correspondence_assistance = MAX(COALESCE(correspondence_assistance, 0), ?),
+              assistance_extension_approved = MAX(COALESCE(assistance_extension_approved, 0), ?)
+            WHERE id = ?
+            "#,
+            params![
+                person.person_uuid,
+                person.request_number,
+                person.request_date,
+                person.eligible_person_designation,
+                person.correspondence_assistance.unwrap_or(0),
+                person.assistance_extension_approved.unwrap_or(0),
+                existing_id,
+            ],
+        )?;
+        Ok(())
+    }
+
     for person in persons {
         let normalized_person_uuid = person
             .person_uuid
@@ -988,6 +1150,34 @@ fn import_append(
                 )
                 .optional()?;
             if let Some(existing_id) = existing_person_id {
+                fill_missing_person_fields(target, existing_id, person)?;
+                person_map.insert(person.id, existing_id);
+                skipped_duplicate_persons += 1;
+                continue;
+            }
+        }
+
+        if let (Some(pesel), Some(request_date)) = (
+            person
+                .pesel
+                .as_ref()
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty()),
+            person
+                .request_date
+                .as_ref()
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty()),
+        ) {
+            let existing_person_id: Option<i64> = target
+                .query_row(
+                    "SELECT id FROM authorized_persons WHERE pesel = ? AND request_date = ? LIMIT 1",
+                    params![pesel, request_date],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(existing_id) = existing_person_id {
+                fill_missing_person_fields(target, existing_id, person)?;
                 person_map.insert(person.id, existing_id);
                 skipped_duplicate_persons += 1;
                 continue;
@@ -997,11 +1187,11 @@ fn import_append(
         target.execute(
             r#"
             INSERT INTO authorized_persons (
-              person_uuid, request_number, request_date, assistance_extension_approved, correspondence_assistance, first_name, last_name, citizenship, pesel, birth_date, phone, email, gender,
+              person_uuid, request_number, request_date, assistance_extension_approved, correspondence_assistance, first_name, last_name, eligible_person_designation, citizenship, pesel, birth_date, phone, email, gender,
               ukr_status, address, identity_document, marital_status, disability, funds_on_release,
               detention_facility, incarceration_date, release_date, info_source, assistance_needed,
               created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             params![
                 normalized_person_uuid.unwrap_or_else(create_person_uuid),
@@ -1011,6 +1201,7 @@ fn import_append(
                 person.correspondence_assistance.unwrap_or(0),
                 person.first_name,
                 person.last_name,
+                person.eligible_person_designation,
                 person.citizenship,
                 person.pesel,
                 person.birth_date,
@@ -1042,7 +1233,12 @@ fn import_append(
             continue;
         };
 
-        if let Some(event_uuid) = help.event_uuid.as_ref().map(|value| value.trim()).filter(|value| !value.is_empty()) {
+        if let Some(event_uuid) = help
+            .event_uuid
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
             let existing_by_uuid: Option<i64> = target
                 .query_row(
                     "SELECT id FROM person_help_entries WHERE event_uuid = ? LIMIT 1",
@@ -1067,6 +1263,7 @@ fn import_append(
                       AND COALESCE(help_amount, -999999999.0) = COALESCE(?, -999999999.0)
                       AND COALESCE(help_quantity, -999999999.0) = COALESCE(?, -999999999.0)
                       AND COALESCE(help_provider, '') = COALESCE(?, '')
+                      AND COALESCE(note, '') = COALESCE(?, '')
                     LIMIT 1
                     "#,
                     params![
@@ -1077,6 +1274,7 @@ fn import_append(
                         help.help_amount,
                         help.help_quantity,
                         help.help_provider,
+                        help.note,
                     ],
                     |row| row.get(0),
                 )
@@ -1090,19 +1288,21 @@ fn import_append(
         target.execute(
             r#"
             INSERT INTO person_help_entries (
-              event_uuid, person_id, help_date, help_type, help_type_label, help_amount, help_quantity,
-              help_provider, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              event_uuid, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity,
+              help_provider, note, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             params![
                 help.event_uuid,
                 new_person_id,
                 help.help_date,
+                help.entry_date,
                 help.help_type,
                 help.help_type_label,
                 help.help_amount,
                 help.help_quantity,
                 help.help_provider,
+                help.note,
                 help.created_at,
                 help.updated_at,
             ],
@@ -1134,10 +1334,11 @@ fn import_append(
     }
 
     if let Some(org_row) = org {
-        let existing_count: i64 =
-            target.query_row("SELECT COUNT(*) FROM organization_settings WHERE id = 1", [], |r| {
-                r.get(0)
-            })?;
+        let existing_count: i64 = target.query_row(
+            "SELECT COUNT(*) FROM organization_settings WHERE id = 1",
+            [],
+            |r| r.get(0),
+        )?;
         if existing_count == 0 {
             target.execute(
                 r#"
@@ -1193,7 +1394,8 @@ fn import_database_bytes(
         .map_err(|e| format!("Błąd odczytu wpisów pomocy z importowanej bazy: {e}"))?;
     let users = read_source_users(&source)
         .map_err(|e| format!("Błąd odczytu kont użytkowników z importowanej bazy: {e}"))?;
-    let org = read_source_org(&source).map_err(|e| format!("Błąd odczytu danych organizacji: {e}"))?;
+    let org =
+        read_source_org(&source).map_err(|e| format!("Błąd odczytu danych organizacji: {e}"))?;
 
     let tx = target
         .transaction()
@@ -1217,7 +1419,10 @@ fn import_database_bytes(
 }
 
 #[tauri::command]
-fn export_database_base64(app: tauri::AppHandle, db_path: Option<String>) -> Result<String, String> {
+fn export_database_base64(
+    app: tauri::AppHandle,
+    db_path: Option<String>,
+) -> Result<String, String> {
     let db_path = resolve_contract_db_path(&app, db_path)?;
     let snapshot_path = create_database_snapshot(&db_path)?;
     let content = fs::read(&snapshot_path)
@@ -1339,7 +1544,8 @@ fn create_password_protected_rar(
     let destination = PathBuf::from(out_path.trim());
     let snapshot_file_name = archive_entry_name.unwrap_or_else(|| "baza_danych.db".to_string());
     let snapshot_path = create_database_snapshot_with_file_name(&db_path, &snapshot_file_name)?;
-    let result = backup_crypto::create_password_protected_rar(&snapshot_path, &destination, &password);
+    let result =
+        backup_crypto::create_password_protected_rar(&snapshot_path, &destination, &password);
     cleanup_snapshot_path(&snapshot_path);
     result
 }
@@ -1356,7 +1562,8 @@ fn create_password_protected_7z(
     let destination = PathBuf::from(out_path.trim());
     let snapshot_file_name = archive_entry_name.unwrap_or_else(|| "baza_danych.db".to_string());
     let snapshot_path = create_database_snapshot_with_file_name(&db_path, &snapshot_file_name)?;
-    let result = backup_crypto::create_password_protected_7z(&snapshot_path, &destination, &password);
+    let result =
+        backup_crypto::create_password_protected_7z(&snapshot_path, &destination, &password);
     cleanup_snapshot_path(&snapshot_path);
     result
 }
@@ -1386,8 +1593,8 @@ fn import_database_from_path(
         return Err("Nie podano ścieżki pliku bazy do importu.".to_string());
     }
     let source = PathBuf::from(raw_source);
-    let raw =
-        fs::read(&source).map_err(|e| format!("Nie udało się odczytać wskazanego pliku bazy: {e}"))?;
+    let raw = fs::read(&source)
+        .map_err(|e| format!("Nie udało się odczytać wskazanego pliku bazy: {e}"))?;
     import_database_bytes(&app, raw, mode, db_path)
 }
 

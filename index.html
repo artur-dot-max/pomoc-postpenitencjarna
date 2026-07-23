@@ -273,12 +273,22 @@
                 <input type="date" name="entry_date" />
               </label>
               <label class="field">
+                <span>Osoba udzielająca pomocy *</span>
+                <select name="help_provider" id="shared-help-provider">
+                  <option value="">Wybierz</option>
+                </select>
+              </label>
+              <label class="field">
                 <span>Kwota *</span>
                 <input type="number" step="0.01" name="help_amount" placeholder="PLN" />
               </label>
               <label class="field">
                 <span>Ilość *</span>
                 <input type="number" step="0.01" name="help_quantity" value="1" />
+              </label>
+              <label class="field field-full-row">
+                <span>Notatka</span>
+                <textarea name="note" rows="3" placeholder="Opcjonalna notatka"></textarea>
               </label>
             </div>
 
@@ -336,66 +346,6 @@
         </div>
       </section>
 
-      <section class="accordion help-entry-accordion">
-        <button type="button" class="accordion-toggle" id="toggle-indivisible-help">
-          <span>Wpis pomocy niepodzielnej</span>
-          <span class="accordion-meta">Kliknij, aby rozwinąć</span>
-        </button>
-        <div class="accordion-panel" id="indivisible-help-panel" hidden>
-          <form class="form-card" id="indivisible-help-form">
-            <div class="section-header">
-              <h2>Wpis pomocy niepodzielnej</h2>
-              <p class="section-hint">
-                Zapisz pomoc, której nie można przypisać proporcjonalnie do osób uprawnionych.
-              </p>
-            </div>
-
-            <div class="grid">
-              <label class="field field-full-row">
-                <span>Rodzaj wsparcia *</span>
-                <select name="help_type">
-                  <option value="">Wybierz</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Data udzielonej pomocy *</span>
-                <input type="date" name="help_date" />
-              </label>
-              <label class="field">
-                <span>Data wpisu *</span>
-                <input type="date" name="entry_date" />
-              </label>
-              <label class="field">
-                <span>Kwota *</span>
-                <input type="number" step="0.01" name="help_amount" placeholder="PLN" />
-              </label>
-              <label class="field">
-                <span>Ilość *</span>
-                <input type="number" step="0.01" name="help_quantity" value="1" />
-              </label>
-              <label class="field field-full-row">
-                <span>Opis dlaczego pomoc nie może zostać podzielona *</span>
-                <textarea name="reason" rows="4" placeholder="Opisz przyczynę"></textarea>
-              </label>
-            </div>
-
-            <div class="actions">
-              <button type="reset" class="btn ghost">Wyczyść</button>
-              <button type="submit" class="btn primary">Zapisz wpis</button>
-            </div>
-            <div class="save-message" id="indivisible-help-message" hidden></div>
-          </form>
-
-          <section class="list-card indivisible-help-history">
-            <div class="section-header">
-              <h2>Lista pomocy niepodzielnej</h2>
-              <p class="section-hint">Ostatnie zapisane wpisy.</p>
-            </div>
-            <div class="indivisible-help-list" id="indivisible-help-list"></div>
-          </section>
-        </div>
-      </section>
-
       <div class="save-message" id="save-message" hidden>
         Dane zostały zapisane, w celu dodania informacji na temat udzielonej pomocy proszę wyszukać osobę w Lista osób i uzupełnić dane.
       </div>
@@ -419,6 +369,7 @@
         <div class="list">
           <div class="list-head">
             <span>Osoba</span>
+            <span>Nr wniosku</span>
             <span>PESEL</span>
             <span>Telefon</span>
             <span>Oznaczenie osoby uprawnionej</span>
@@ -426,6 +377,7 @@
           <div class="list-body" id="people-list">
             <div class="list-row muted">
               <span>Brak zapisanych osób</span>
+              <span>-</span>
               <span>-</span>
               <span>-</span>
               <span>-</span>

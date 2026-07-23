@@ -661,36 +661,6 @@ h2 {
   overflow-wrap: anywhere;
 }
 
-.indivisible-help-history {
-  margin-top: 16px;
-}
-
-.indivisible-help-list {
-  display: grid;
-  gap: 10px;
-}
-
-.indivisible-help-row {
-  display: grid;
-  grid-template-columns: 0.8fr 1.4fr 0.8fr 1.6fr;
-  gap: 12px;
-  align-items: start;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: #ffffff;
-}
-
-.indivisible-help-row span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.indivisible-help-row.muted {
-  color: var(--muted);
-  background: #f7f5f0;
-}
-
 #reports-page .top-nav {
   justify-content: flex-start;
   gap: 12px;
@@ -734,6 +704,11 @@ h2 {
 .list-body .list-row:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 20px rgba(20, 22, 18, 0.12);
+}
+
+#list-view .list-head,
+#people-list .list-row {
+  grid-template-columns: 1.6fr 0.8fr 1fr 1fr 1.4fr;
 }
 
 .detail-view {
@@ -841,7 +816,7 @@ h2 {
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: 1fr 1.4fr 0.7fr 0.7fr 0.8fr 1.2fr 0.8fr;
+  grid-template-columns: 0.9fr 1.3fr 0.7fr 0.7fr 0.8fr 1.1fr 1.2fr 0.8fr;
   gap: 12px;
   align-items: center;
 }
@@ -1032,6 +1007,11 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  #list-view .list-head,
+  #people-list .list-row {
+    grid-template-columns: 1fr;
+  }
+
   .list-filters {
     grid-template-columns: 1fr;
   }
@@ -1067,8 +1047,7 @@ h2 {
 
   .shared-help-layout,
   .shared-person-row,
-  .shared-help-filters,
-  .indivisible-help-row {
+  .shared-help-filters {
     grid-template-columns: 1fr;
   }
 

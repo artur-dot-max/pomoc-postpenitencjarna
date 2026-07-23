@@ -47,11 +47,13 @@ type HelpEntry = {
   event_uuid?: string;
   person_id: number;
   help_date?: string;
+  entry_date?: string;
   help_type?: string;
   help_type_label?: string;
   help_amount?: number;
   help_quantity?: number;
   help_provider?: string;
+  note?: string;
 };
 
 type ImportDbResult = {
@@ -147,6 +149,20 @@ const DESIGNATION_LABELS: Record<string, string> = {
   NAJBLIZSZA_ZWOLNIONEJ:
     "Osoba najbliższa osobie zwolnionej z zakładu karnego/aresztu śledczego",
 };
+
+function getDesignationReportLabel(value: string | null | undefined) {
+  switch (value) {
+    case "ZWOLNIONA":
+      return "zwolniony";
+    case "POZBAWIONA_LUB_ZWALNIANA":
+      return "osadzony";
+    case "NAJBLIZSZA_POZBAWIONEJ":
+    case "NAJBLIZSZA_ZWOLNIONEJ":
+      return "rodzina";
+    default:
+      return value ? (DESIGNATION_LABELS[value] ?? value) : "-";
+  }
+}
 
 const HELP_TYPE_OPTIONS = [
   ["1", "1) pokrywanie kosztów czasowego zakwaterowania lub udzielanie schronienia w ośrodku dla bezdomnych;"],
@@ -628,6 +644,7 @@ function createListRow(person: Person) {
   mapPersonToDataset(row, person);
   row.innerHTML = `
     <span>${row.dataset.fullName}</span>
+    <span>${escapeHtml(row.dataset.requestNumber || "-")}</span>
     <span>${row.dataset.pesel}</span>
     <span>${row.dataset.phone}</span>
     <span>${row.dataset.designationLabel}</span>
@@ -686,6 +703,9 @@ function applyFilters(
         <span>-</span>
         <span>-</span>
         <span>-</span>
+        <span>-</span>
+        <span>-</span>
+        <span>-</span>
       `;
       list.append(noResults);
     }
@@ -719,6 +739,7 @@ async function loadPersons(list: HTMLDivElement) {
     empty.className = "list-row muted";
     empty.innerHTML = `
       <span>Brak zapisanych osób</span>
+      <span>-</span>
       <span>-</span>
       <span>-</span>
       <span>-</span>
@@ -877,11 +898,13 @@ async function ensureHelpTable() {
       event_uuid      TEXT UNIQUE,
       person_id       INTEGER NOT NULL,
       help_date       TEXT,
+      entry_date      TEXT,
       help_type       TEXT,
       help_type_label TEXT,
       help_amount     REAL,
       help_quantity   REAL,
       help_provider   TEXT,
+      note            TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
     )`
@@ -889,8 +912,16 @@ async function ensureHelpTable() {
   type TableInfoRow = { name: string };
   const columns = await db.select<TableInfoRow[]>("PRAGMA table_info(person_help_entries)");
   const hasEventUuid = columns.some((column) => column.name === "event_uuid");
+  const hasEntryDate = columns.some((column) => column.name === "entry_date");
+  const hasNote = columns.some((column) => column.name === "note");
   if (!hasEventUuid) {
     await db.execute("ALTER TABLE person_help_entries ADD COLUMN event_uuid TEXT");
+  }
+  if (!hasEntryDate) {
+    await db.execute("ALTER TABLE person_help_entries ADD COLUMN entry_date TEXT");
+  }
+  if (!hasNote) {
+    await db.execute("ALTER TABLE person_help_entries ADD COLUMN note TEXT");
   }
   await db.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_person_help_entries_event_uuid ON person_help_entries(event_uuid)"
@@ -905,34 +936,6 @@ async function ensureHelpTable() {
       createHelpEventUuid(),
       row.id,
     ]);
-  }
-}
-
-async function ensureIndivisibleHelpTable() {
-  const db = await getDb();
-  await db.execute(
-    `CREATE TABLE IF NOT EXISTS indivisible_help_entries (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      entry_uuid      TEXT UNIQUE,
-      help_date       TEXT,
-      entry_date      TEXT,
-      help_type       TEXT,
-      help_type_label TEXT,
-      help_amount     REAL,
-      help_quantity   REAL,
-      reason          TEXT,
-      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-    )`
-  );
-  await db.execute(
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_indivisible_help_entries_uuid ON indivisible_help_entries(entry_uuid)"
-  );
-  type TableInfoRow = { name: string };
-  const columns = await db.select<TableInfoRow[]>("PRAGMA table_info(indivisible_help_entries)");
-  const hasHelpTypeLabel = columns.some((column) => column.name === "help_type_label");
-  if (!hasHelpTypeLabel) {
-    await db.execute("ALTER TABLE indivisible_help_entries ADD COLUMN help_type_label TEXT");
   }
 }
 
@@ -1134,6 +1137,8 @@ window.addEventListener("DOMContentLoaded", () => {
     const sharedHelpSummary = document.querySelector<HTMLDivElement>("#shared-help-summary");
     const sharedHelpMessage = document.querySelector<HTMLDivElement>("#shared-help-message");
     const sharedHelpTypeSelect = document.querySelector<HTMLSelectElement>("#shared-help-type");
+    const sharedHelpProviderSelect =
+      document.querySelector<HTMLSelectElement>("#shared-help-provider");
     const sharedHelpFilterName = document.querySelector<HTMLInputElement>("#shared-help-filter-name");
     const sharedHelpFilterPesel = document.querySelector<HTMLInputElement>("#shared-help-filter-pesel");
     const sharedHelpClearFilters =
@@ -1145,13 +1150,6 @@ window.addEventListener("DOMContentLoaded", () => {
     const sharedHelpPrevPage = document.querySelector<HTMLButtonElement>("#shared-help-prev-page");
     const sharedHelpNextPage = document.querySelector<HTMLButtonElement>("#shared-help-next-page");
     const sharedHelpPageInfo = document.querySelector<HTMLSpanElement>("#shared-help-page-info");
-    const toggleIndivisibleHelp = document.querySelector<HTMLButtonElement>("#toggle-indivisible-help");
-    const indivisibleHelpPanel = document.querySelector<HTMLDivElement>("#indivisible-help-panel");
-    const indivisibleHelpMeta =
-      toggleIndivisibleHelp?.querySelector<HTMLSpanElement>(".accordion-meta");
-    const indivisibleHelpForm = document.querySelector<HTMLFormElement>("#indivisible-help-form");
-    const indivisibleHelpMessage = document.querySelector<HTMLDivElement>("#indivisible-help-message");
-    const indivisibleHelpList = document.querySelector<HTMLDivElement>("#indivisible-help-list");
     const saveMessage = document.querySelector<HTMLDivElement>("#save-message");
     const designationSelect =
       form?.elements.namedItem("eligible_person_designation") as HTMLSelectElement | null;
@@ -2391,7 +2389,6 @@ window.addEventListener("DOMContentLoaded", () => {
     });
 
     setupAccordion(toggleSharedHelp, sharedHelpPanel, sharedHelpMeta ?? null);
-    setupAccordion(toggleIndivisibleHelp, indivisibleHelpPanel, indivisibleHelpMeta ?? null);
 
     sharedHelpForm?.addEventListener("input", updateSharedHelpSummary);
     sharedHelpPeopleList?.addEventListener("change", () => {
@@ -2443,9 +2440,11 @@ window.addEventListener("DOMContentLoaded", () => {
       const helpDate = String(formData.get("help_date") ?? "").trim();
       const entryDate = String(formData.get("entry_date") ?? "").trim();
       const helpType = String(formData.get("help_type") ?? "").trim();
+      const helpProvider = String(formData.get("help_provider") ?? "").trim();
       const selectedTypeLabel = sharedHelpTypeSelect?.selectedOptions[0]?.textContent ?? "";
       const helpAmountRaw = String(formData.get("help_amount") ?? "").trim();
       const helpQuantityRaw = String(formData.get("help_quantity") ?? "").trim();
+      const note = String(formData.get("note") ?? "").trim();
       const amountValue = parseAmount(helpAmountRaw);
       const quantityValue = parseAmount(helpQuantityRaw || "1") || 1;
       const totalAmount = amountValue * quantityValue;
@@ -2453,6 +2452,10 @@ window.addEventListener("DOMContentLoaded", () => {
 
       if (!helpType) {
         setSharedHelpMessage("Wybierz rodzaj wsparcia.", "error");
+        return;
+      }
+      if (!helpProvider) {
+        setSharedHelpMessage("Wybierz osobę udzielającą pomocy.", "error");
         return;
       }
       if (!helpDate || !entryDate) {
@@ -2472,7 +2475,15 @@ window.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const amountPerPerson = Math.round((totalAmount / selectedPersonIds.length) * 100) / 100;
+      const splitAmounts = splitAmountExactly(totalAmount, selectedPersonIds.length);
+      const splitSummary = formatSplitSummary(splitAmounts);
+      const sharedHelpNoteParts = [
+        `Pomoc współdzielona. Łączna kwota: ${formatAmount(totalAmount)}; liczba osób: ${selectedPersonIds.length}; podział: ${splitSummary}.`,
+      ];
+      if (note) {
+        sharedHelpNoteParts.push(`Notatka: ${note}`);
+      }
+      const sharedHelpNote = sharedHelpNoteParts.join(" ");
       const db = await getDb();
       const selectedPersons = await db.select<Person[]>(
         `SELECT id, first_name, last_name, eligible_person_designation, release_date, assistance_extension_approved
@@ -2496,21 +2507,23 @@ window.addEventListener("DOMContentLoaded", () => {
         return;
       }
       await ensureHelpTable();
-      const provider = currentUser.username;
-      for (const personId of selectedPersonIds) {
+      for (const [index, personId] of selectedPersonIds.entries()) {
+        const amountUnitPerPerson = splitAmounts[index] / quantityValue;
         await db.execute(
           `INSERT INTO person_help_entries (
-            event_uuid, person_id, help_date, help_type, help_type_label, help_amount, help_quantity, help_provider, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, datetime('now'))`,
+            event_uuid, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity, help_provider, note, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
           [
             createHelpEventUuid(),
             personId,
             helpDate,
+            entryDate,
             helpType,
             selectedTypeLabel || null,
-            amountPerPerson,
-            provider,
-            entryDate,
+            amountUnitPerPerson,
+            quantityValue,
+            helpProvider,
+            sharedHelpNote,
           ]
         );
       }
@@ -2523,70 +2536,9 @@ window.addEventListener("DOMContentLoaded", () => {
         });
       updateSharedHelpSummary();
       setSharedHelpMessage(
-        `Dopisano pomoc do ${selectedPersonIds.length} osób. Kwota na osobę: ${formatAmount(amountPerPerson)}.`,
+        `Dopisano pomoc do ${selectedPersonIds.length} osób. Podział: ${splitSummary}.`,
         "success"
       );
-    });
-
-    indivisibleHelpForm?.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (!indivisibleHelpForm) return;
-
-      const formData = new FormData(indivisibleHelpForm);
-      const helpDate = String(formData.get("help_date") ?? "").trim();
-      const entryDate = String(formData.get("entry_date") ?? "").trim();
-      const helpType = String(formData.get("help_type") ?? "").trim();
-      const helpTypeLabel =
-        indivisibleHelpForm.querySelector<HTMLSelectElement>("select[name='help_type']")?.selectedOptions[0]
-          ?.textContent ?? "";
-      const helpAmountRaw = String(formData.get("help_amount") ?? "").trim();
-      const helpQuantityRaw = String(formData.get("help_quantity") ?? "").trim();
-      const reason = String(formData.get("reason") ?? "").trim();
-      const amountValue = parseAmount(helpAmountRaw);
-      const quantityValue = parseAmount(helpQuantityRaw || "1") || 1;
-
-      if (!helpType) {
-        setIndivisibleHelpMessage("Wpisz rodzaj wsparcia.", "error");
-        return;
-      }
-      if (!helpDate || !entryDate) {
-        setIndivisibleHelpMessage("Uzupełnij datę udzielonej pomocy oraz datę wpisu.", "error");
-        return;
-      }
-      if (!isDateWithinAllowedRange(helpDate) || !isDateWithinAllowedRange(entryDate)) {
-        setIndivisibleHelpMessage("Daty muszą być w zakresie od 01.01.1940 do 31.12.2050.", "error");
-        return;
-      }
-      if (amountValue * quantityValue <= 0) {
-        setIndivisibleHelpMessage("Podaj kwotę większą od zera.", "error");
-        return;
-      }
-      if (!reason) {
-        setIndivisibleHelpMessage("Opisz, dlaczego pomoc nie może zostać podzielona.", "error");
-        return;
-      }
-
-      await ensureIndivisibleHelpTable();
-      const db = await getDb();
-      await db.execute(
-        `INSERT INTO indivisible_help_entries (
-          entry_uuid, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity, reason, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-        [
-          createUuid(),
-          helpDate,
-          entryDate,
-          helpType,
-          helpTypeLabel || null,
-          amountValue,
-          quantityValue,
-          reason,
-        ]
-      );
-
-      indivisibleHelpForm.reset();
-      await loadIndivisibleHelpEntries();
-      setIndivisibleHelpMessage("Zapisano wpis pomocy niepodzielnej.", "success");
     });
 
     togglePersonForm?.addEventListener("click", () => {
@@ -2617,7 +2569,7 @@ window.addEventListener("DOMContentLoaded", () => {
         await loadPersons(list);
         applyPeopleFiltersAndPagination();
         await loadSharedHelpPeople();
-        await loadIndivisibleHelpEntries();
+        await loadSharedHelpProviders();
       } catch (error) {
         console.error("Nie udało się wczytać listy osób:", error);
       }
@@ -2824,6 +2776,31 @@ window.addEventListener("DOMContentLoaded", () => {
       return `${value.toFixed(2).replace(".", ",")} zł`;
     }
 
+    function splitAmountExactly(totalAmount: number, parts: number) {
+      if (parts <= 0) return [];
+      const totalCents = Math.round(totalAmount * 100);
+      const baseCents = Math.floor(totalCents / parts);
+      const remainder = totalCents % parts;
+
+      return Array.from({ length: parts }, (_, index) => {
+        const cents = baseCents + (index < remainder ? 1 : 0);
+        return cents / 100;
+      });
+    }
+
+    function formatSplitSummary(amounts: number[]) {
+      const uniqueAmounts = Array.from(new Set(amounts.map((amount) => amount.toFixed(2))))
+        .map(Number)
+        .sort((left, right) => right - left);
+
+      return uniqueAmounts
+        .map((amount) => {
+          const count = amounts.filter((value) => value.toFixed(2) === amount.toFixed(2)).length;
+          return `${count} x ${formatAmount(amount)}`;
+        })
+        .join(", ");
+    }
+
     function populateHelpTypeSelect(select: HTMLSelectElement | null) {
       if (!select) return;
       const currentValue = select.value;
@@ -2855,22 +2832,42 @@ window.addEventListener("DOMContentLoaded", () => {
       return fullName || user.username;
     }
 
-    async function loadHelpProviders(selectedProvider = "") {
-      if (!helpProviderSelect) return;
+    async function loadProviderNames(selectedProvider = "", activeOnly = false) {
       const db = await getDb();
+      const whereSql = activeOnly ? "WHERE is_active = 1" : "";
       const users = await db.select<UserRow[]>(
-        "SELECT id, username, password_hash, role, is_active, first_name, last_name, position FROM users ORDER BY last_name COLLATE NOCASE ASC, first_name COLLATE NOCASE ASC, username COLLATE NOCASE ASC"
+        `SELECT id, username, password_hash, role, is_active, first_name, last_name, position
+         FROM users
+         ${whereSql}
+         ORDER BY last_name COLLATE NOCASE ASC, first_name COLLATE NOCASE ASC, username COLLATE NOCASE ASC`
       );
       const providerNames = Array.from(new Set(users.map((user) => formatWorkerFullName(user))));
+      if (selectedProvider && !providerNames.includes(selectedProvider)) {
+        providerNames.push(selectedProvider);
+      }
+      return providerNames;
+    }
+
+    async function loadHelpProviders(selectedProvider = "") {
+      if (!helpProviderSelect) return;
+      const providerNames = await loadProviderNames(selectedProvider);
       const options = ['<option value="">Wybierz</option>'];
       providerNames.forEach((name) => {
-        options.push(`<option value="${name}">${name}</option>`);
+        options.push(`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`);
       });
-      if (selectedProvider && !providerNames.includes(selectedProvider)) {
-        options.push(`<option value="${selectedProvider}">${selectedProvider}</option>`);
-      }
       helpProviderSelect.innerHTML = options.join("");
       helpProviderSelect.value = selectedProvider;
+    }
+
+    async function loadSharedHelpProviders(selectedProvider = "") {
+      if (!sharedHelpProviderSelect) return;
+      const providerNames = await loadProviderNames(selectedProvider, true);
+      const options = ['<option value="">Wybierz</option>'];
+      providerNames.forEach((name) => {
+        options.push(`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`);
+      });
+      sharedHelpProviderSelect.innerHTML = options.join("");
+      sharedHelpProviderSelect.value = selectedProvider;
     }
 
     function setSharedHelpMessage(text: string, variant: "success" | "error") {
@@ -2879,15 +2876,6 @@ window.addEventListener("DOMContentLoaded", () => {
       sharedHelpMessage.hidden = false;
       sharedHelpMessage.classList.remove("success", "error");
       sharedHelpMessage.classList.add(variant);
-      showAppToast(text, variant);
-    }
-
-    function setIndivisibleHelpMessage(text: string, variant: "success" | "error") {
-      if (!indivisibleHelpMessage) return;
-      indivisibleHelpMessage.textContent = text;
-      indivisibleHelpMessage.hidden = false;
-      indivisibleHelpMessage.classList.remove("success", "error");
-      indivisibleHelpMessage.classList.add(variant);
       showAppToast(text, variant);
     }
 
@@ -2990,57 +2978,16 @@ window.addEventListener("DOMContentLoaded", () => {
         ) || 1;
       const totalAmount = amount * quantity;
       const selectedCount = getSelectedSharedPersonIds().length;
-      const amountPerPerson = selectedCount > 0 ? totalAmount / selectedCount : 0;
+      const splitSummary = selectedCount > 0 ? formatSplitSummary(splitAmountExactly(totalAmount, selectedCount)) : "-";
       const summaryTotal = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='total']");
       const summaryPeople = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='people']");
       const summaryPerPerson = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='per-person']");
       if (summaryTotal) summaryTotal.textContent = formatAmount(totalAmount);
       if (summaryPeople) summaryPeople.textContent = String(selectedCount);
-      if (summaryPerPerson) summaryPerPerson.textContent = selectedCount ? formatAmount(amountPerPerson) : "-";
+      if (summaryPerPerson) summaryPerPerson.textContent = splitSummary;
       if (sharedHelpSelectedCount) {
         sharedHelpSelectedCount.textContent = `Zaznaczono: ${selectedCount}`;
       }
-    }
-
-    async function loadIndivisibleHelpEntries() {
-      if (!indivisibleHelpList) return;
-      await ensureIndivisibleHelpTable();
-      const db = await getDb();
-      const entries = await db.select<
-        Array<{
-          id: number;
-          help_date?: string;
-          entry_date?: string;
-          help_type?: string;
-          help_type_label?: string;
-          help_amount?: number;
-          help_quantity?: number;
-          reason?: string;
-        }>
-      >(
-        `SELECT id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity, reason
-         FROM indivisible_help_entries
-         ORDER BY COALESCE(entry_date, help_date, created_at) DESC, id DESC
-         LIMIT 20`
-      );
-      if (!entries.length) {
-        indivisibleHelpList.innerHTML = `<div class="indivisible-help-row muted"><span>Brak wpisów</span><span>-</span><span>-</span><span>-</span></div>`;
-        return;
-      }
-      indivisibleHelpList.innerHTML = entries
-        .map((entry) => {
-          const amount = Number(entry.help_amount ?? 0);
-          const quantity = Number(entry.help_quantity ?? 1);
-          return `
-            <div class="indivisible-help-row">
-              <span>${escapeHtml(entry.help_date || entry.entry_date || "-")}</span>
-              <span>${escapeHtml(entry.help_type_label || entry.help_type || "-")}</span>
-              <span>${formatAmount(amount * quantity)}</span>
-              <span>${escapeHtml(entry.reason || "-")}</span>
-            </div>
-          `;
-        })
-        .join("");
     }
 
     function resetHelpForm() {
@@ -3074,6 +3021,7 @@ window.addEventListener("DOMContentLoaded", () => {
       row.dataset.helpAmount = entry.help_amount?.toString() ?? "";
       row.dataset.helpQuantity = entry.help_quantity?.toString() ?? "1";
       row.dataset.helpProvider = entry.help_provider ?? "";
+      row.dataset.note = entry.note ?? "";
 
       const amount = Number(entry.help_amount ?? 0);
       const quantity = Number(entry.help_quantity ?? 1);
@@ -3087,6 +3035,7 @@ window.addEventListener("DOMContentLoaded", () => {
         entry.help_quantity != null ? String(quantity) : "-",
         sumValue ? formatAmount(sumValue) : "-",
         entry.help_provider || "-",
+        entry.note || "-",
       ];
 
       values.forEach((value) => {
@@ -3169,7 +3118,7 @@ window.addEventListener("DOMContentLoaded", () => {
         params.push(filter.month);
       }
       const entries = await db.select<HelpEntry[]>(
-        `SELECT id, event_uuid, person_id, help_date, help_type, help_type_label, help_amount, help_quantity, help_provider
+        `SELECT id, event_uuid, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity, help_provider, note
          FROM person_help_entries
          WHERE ${whereClauses.join(" AND ")}
          ORDER BY help_date DESC, id DESC`,
@@ -3240,6 +3189,7 @@ window.addEventListener("DOMContentLoaded", () => {
         row.dataset.helpAmount ?? "";
       (helpForm.elements.namedItem("help_quantity") as HTMLInputElement).value =
         row.dataset.helpQuantity ?? "1";
+      (helpForm.elements.namedItem("note") as HTMLTextAreaElement).value = row.dataset.note ?? "";
       void (async () => {
         await loadHelpProviders(row.dataset.helpProvider ?? "");
         (helpForm.elements.namedItem("help_provider") as HTMLSelectElement).value =
@@ -3262,6 +3212,7 @@ window.addEventListener("DOMContentLoaded", () => {
       const helpAmount = String(formData.get("help_amount") ?? "").trim();
       const helpQuantity = String(formData.get("help_quantity") ?? "").trim();
       const helpProvider = String(formData.get("help_provider") ?? "").trim();
+      const note = String(formData.get("note") ?? "").trim();
       const helpTypeLabel =
         helpForm.querySelector<HTMLSelectElement>("select[name='help_type']")?.selectedOptions[0]
           ?.textContent ?? "";
@@ -3287,7 +3238,7 @@ window.addEventListener("DOMContentLoaded", () => {
         await db.execute(
           `UPDATE person_help_entries
            SET help_date = ?, help_type = ?, help_type_label = ?, help_amount = ?, help_quantity = ?,
-               help_provider = ?, updated_at = datetime('now')
+               help_provider = ?, note = ?, updated_at = datetime('now')
            WHERE id = ? AND person_id = ?`,
           [
             helpDate || null,
@@ -3296,6 +3247,7 @@ window.addEventListener("DOMContentLoaded", () => {
             helpAmount ? amountValue : null,
             quantityValue,
             helpProvider || null,
+            note || null,
             Number(helpIdRaw),
             activePersonId,
           ]
@@ -3303,8 +3255,8 @@ window.addEventListener("DOMContentLoaded", () => {
       } else {
         await db.execute(
           `INSERT INTO person_help_entries (
-            event_uuid, person_id, help_date, help_type, help_type_label, help_amount, help_quantity, help_provider, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+            event_uuid, person_id, help_date, help_type, help_type_label, help_amount, help_quantity, help_provider, note, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
           [
             createHelpEventUuid(),
             activePersonId,
@@ -3314,6 +3266,7 @@ window.addEventListener("DOMContentLoaded", () => {
             helpAmount ? amountValue : null,
             quantityValue,
             helpProvider || null,
+            note || null,
           ]
         );
       }
@@ -3527,6 +3480,7 @@ window.addEventListener("DOMContentLoaded", () => {
         first_name: string | null;
         last_name: string | null;
         pesel: string | null;
+        eligible_person_designation: string | null;
         entries_count: number | null;
         total_amount: number | null;
         help_type_label: string | null;
@@ -3536,13 +3490,14 @@ window.addEventListener("DOMContentLoaded", () => {
           p.first_name,
           p.last_name,
           p.pesel,
+          p.eligible_person_designation,
           COUNT(he.id) AS entries_count,
           ROUND(SUM(COALESCE(he.help_amount, 0) * COALESCE(he.help_quantity, 1)), 2) AS total_amount,
           COALESCE(he.help_type_label, '(brak)') AS help_type_label
          FROM person_help_entries he
          JOIN authorized_persons p ON p.id = he.person_id
          ${filter.whereSql}
-         GROUP BY p.id, p.first_name, p.last_name, p.pesel, COALESCE(he.help_type_label, '(brak)')
+         GROUP BY p.id, p.first_name, p.last_name, p.pesel, p.eligible_person_designation, COALESCE(he.help_type_label, '(brak)')
          ORDER BY p.last_name ASC, p.first_name ASC, help_type_label ASC`,
         filter.params
       );
@@ -3552,10 +3507,11 @@ window.addEventListener("DOMContentLoaded", () => {
         fromDate,
         toDate,
         title: "Raport według osób i udzielanej pomocy",
-        headers: ["Osoba", "PESEL", "Liczba wpisów", "Suma kwot (PLN)", "Rodzaj wsparcia"],
+        headers: ["Osoba", "PESEL", "Oznaczenie osoby uprawnionej", "Liczba wpisów", "Suma kwot (PLN)", "Rodzaj wsparcia"],
         rows: rows.map((row) => [
           `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || "(brak)",
           row.pesel ?? "-",
+          getDesignationReportLabel(row.eligible_person_designation),
           String(row.entries_count ?? 0),
           formatNumber(Number(row.total_amount ?? 0)),
           row.help_type_label ?? "(brak)",
@@ -3574,11 +3530,13 @@ window.addEventListener("DOMContentLoaded", () => {
         first_name: string | null;
         last_name: string | null;
         pesel: string | null;
+        eligible_person_designation: string | null;
         help_type_label: string | null;
         help_amount: number | null;
         help_quantity: number | null;
         total_amount: number | null;
         help_provider: string | null;
+        note: string | null;
       };
       const rows = await db.select<AllRow[]>(
         `SELECT
@@ -3586,11 +3544,13 @@ window.addEventListener("DOMContentLoaded", () => {
           p.first_name,
           p.last_name,
           p.pesel,
+          p.eligible_person_designation,
           COALESCE(he.help_type_label, '(brak)') AS help_type_label,
           he.help_amount,
           he.help_quantity,
           ROUND(COALESCE(he.help_amount, 0) * COALESCE(he.help_quantity, 1), 2) AS total_amount,
-          he.help_provider
+          he.help_provider,
+          he.note
          FROM person_help_entries he
          JOIN authorized_persons p ON p.id = he.person_id
          ${filter.whereSql}
@@ -3607,21 +3567,25 @@ window.addEventListener("DOMContentLoaded", () => {
           "Data pomocy",
           "Osoba",
           "PESEL",
+          "Oznaczenie osoby uprawnionej",
           "Rodzaj wsparcia",
           "Kwota (PLN)",
           "Ilość",
           "Suma (PLN)",
           "Osoba udzielająca",
+          "Notatka",
         ],
         rows: rows.map((row) => [
           row.help_date ?? "-",
           `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || "(brak)",
           row.pesel ?? "-",
+          getDesignationReportLabel(row.eligible_person_designation),
           row.help_type_label ?? "(brak)",
           formatNumber(Number(row.help_amount ?? 0)),
           String(row.help_quantity ?? 0),
           formatNumber(Number(row.total_amount ?? 0)),
           row.help_provider ?? "-",
+          row.note ?? "-",
         ]),
         summary,
       } satisfies ReportDataset;

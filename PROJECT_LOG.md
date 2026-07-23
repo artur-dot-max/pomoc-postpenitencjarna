@@ -55,6 +55,61 @@ Wazne mechanizmy:
 
 ## Historia zmian
 
+### 2026-07-21
+
+#### Naprawa scalania baz danych
+- Poprawiono importer baz danych tak, aby przenosił `eligible_person_designation` dla osób uprawnionych.
+- Importer uzupełnia teraz brakujące kolumny w starszej bazie docelowej: `request_date`, `assistance_extension_approved` oraz `eligible_person_designation`.
+- W trybie `Dopisz do bazy` ponowny import istniejącej osoby uzupełnia puste pola identyfikacyjne i oznaczenie osoby uprawnionej, zamiast zostawiać wcześniejszy niepełny rekord.
+- Odczyt danych organizacji i kont użytkowników jest odporniejszy na starsze struktury baz bez nowszych kolumn.
+- Weryfikacja: uruchomiono `cargo check` oraz `npm run build`; oba polecenia zakończyły się powodzeniem.
+
+#### Pracownik przy pomocy współdzielonej i oznaczenie osoby w raportach
+- Do formularza `Wpis pomocy współdzielonej` dodano obowiązkowy wybór osoby udzielającej pomocy z listy aktywnych pracowników.
+- Wybrany pracownik jest zapisywany w istniejącym polu `help_provider`, więc zasila dotychczasowy raport aktywności pracowników bez zmiany schematu bazy.
+- Do raportów `Osoby i udzielona pomoc` oraz `Wszystkie dane (baza)` dodano kolumnę `Oznaczenie osoby uprawnionej` z wartościami do statystyk: `osadzony`, `zwolniony`, `rodzina`.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
+### 2026-05-20
+
+#### Widoczny numer wniosku na liście osób
+- W sekcji `Lista osób` dodano kolumnę `Nr wniosku`.
+- Każdy wiersz osoby pokazuje numer wniosku albo `-`, jeśli pole nie jest uzupełnione.
+- Układ kolumn ograniczono do głównej listy osób, bez wpływu na inne listy aplikacji.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
+#### Weryfikacja zapisu danych osoby i pomocy
+- Sprawdzono mapowanie pól formularza `Dane osoby uprawnionej` do tabeli `authorized_persons`; pola formularza są zapisywane do odpowiadających kolumn.
+- Poprawiono zapis `Wpisu pomocy współdzielonej`: `Data wpisu` trafia teraz do osobnej kolumny `entry_date` w `person_help_entries`.
+- Poprawiono zapis ilości w pomocy współdzielonej: wpisana `Ilość` jest zachowywana w `help_quantity`, a kwota jest dzielona na osoby tak, aby suma raportowa pozostała poprawna.
+- Rozszerzono obsługę importu/eksportu baz po stronie Tauri o kolumnę `entry_date`.
+- Weryfikacja: uruchomiono `npm run build` oraz `cargo check`; oba polecenia zakończyły się powodzeniem.
+
+#### Notatka przy wpisach pomocy
+- Do formularza `Dodaj wpis pomocy` na karcie osoby dodano pole `Notatka`.
+- Do formularza `Wpis pomocy współdzielonej` dodano pole `Notatka`; notatka jest zapisywana przy każdym dopisanym wpisie pomocy.
+- Rozszerzono tabelę `person_help_entries` o kolumnę `note` oraz dodano migrację dla starszych baz danych.
+- Rozszerzono import/eksport baz po stronie Tauri o przenoszenie notatki.
+- Weryfikacja: uruchomiono `npm run build` oraz `cargo check`; oba polecenia zakończyły się powodzeniem.
+
+#### Automatyczna adnotacja dla pomocy współdzielonej
+- Przy zapisie `Wpisu pomocy współdzielonej` aplikacja automatycznie dopisuje do notatki informację, że wpis pochodzi z pomocy współdzielonej.
+- Adnotacja zawiera łączną kwotę, liczbę osób i kwotę przypadającą na osobę.
+- Jeśli użytkownik wpisze własną notatkę, jest ona dopisywana po automatycznej adnotacji.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
+#### Notatka w raporcie szczegółowym
+- Do raportu `Raport wszystkie dane` dodano kolumnę `Notatka`.
+- Notatka jest widoczna w podglądzie raportu oraz eksportach CSV/XLSX, bo korzystają ze wspólnego zestawu danych raportu.
+- Zweryfikowano, że eksport kopii bazy danych zapisuje pełną migawkę SQLite przez `VACUUM INTO`, więc obejmuje wszystkie tabele i kolumny, w tym `entry_date` i `note`.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
+#### Usunięcie wpisu pomocy niepodzielnej
+- Ze strony głównej usunięto panel `Wpis pomocy niepodzielnej` oraz listę ostatnich wpisów tego typu.
+- Usunięto powiązaną logikę frontendu, inicjalizację tabeli `indivisible_help_entries` i style widoku.
+- Pozostawiono bez zmian wpis pomocy współdzielonej oraz wpisy pomocy przypisywane na karcie osoby.
+- Weryfikacja: uruchomiono `npm run build`; build zakończył się powodzeniem.
+
 ### 2026-05-13
 
 #### Dodanie wpisów pomocy z poziomu strony głównej
