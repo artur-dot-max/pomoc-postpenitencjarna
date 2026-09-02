@@ -63,10 +63,29 @@
         </div>
         <div class="actions">
           <button type="submit" class="btn primary">Zaloguj</button>
+          <button type="button" class="btn ghost" id="show-totp-reset">Reset przez Google Authenticator</button>
           <a class="btn ghost" href="recover.html">Odzyskaj hasło</a>
           <button type="button" class="btn ghost" id="login-exit">Zamknij</button>
         </div>
         <div class="save-message" id="login-message" hidden></div>
+      </form>
+
+      <form class="form-card" id="totp-login-form" hidden>
+        <div class="section-header">
+          <h2>Kod uwierzytelniający</h2>
+          <p class="section-hint">Wpisz aktualny kod z Google Authenticator.</p>
+        </div>
+        <div class="grid" style="grid-template-columns: 1fr">
+          <label class="field">
+            <span>Kod 6-cyfrowy</span>
+            <input type="text" name="totp_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+          </label>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn ghost" id="totp-back-to-password">Wróć</button>
+          <button type="submit" class="btn primary">Potwierdź</button>
+        </div>
+        <div class="save-message" id="totp-login-message" hidden></div>
       </form>
 
       <form class="form-card" id="reset-password-form" hidden>
@@ -94,6 +113,38 @@
           <button type="submit" class="btn primary">Zapisz nowe hasło</button>
         </div>
         <div class="save-message" id="reset-password-message" hidden></div>
+      </form>
+
+      <form class="form-card" id="totp-reset-password-form" hidden>
+        <div class="section-header">
+          <h2>Reset hasła przez Google Authenticator</h2>
+          <p class="section-hint">
+            Ta opcja działa tylko dla kont, na których wcześniej włączono uwierzytelnianie dwuetapowe.
+          </p>
+        </div>
+        <div class="grid" style="grid-template-columns: 1fr">
+          <label class="field">
+            <span>Login</span>
+            <input type="text" name="username" autocomplete="username" />
+          </label>
+          <label class="field">
+            <span>Kod z Google Authenticator</span>
+            <input type="text" name="totp_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+          </label>
+          <label class="field">
+            <span>Nowe hasło</span>
+            <input type="password" name="new_password" autocomplete="new-password" />
+          </label>
+          <label class="field">
+            <span>Powtórz nowe hasło</span>
+            <input type="password" name="new_password_repeat" autocomplete="new-password" />
+          </label>
+        </div>
+        <div class="actions">
+          <a class="btn ghost" href="login.html">Wróć do logowania</a>
+          <button type="submit" class="btn primary">Zapisz nowe hasło</button>
+        </div>
+        <div class="save-message" id="totp-reset-password-message" hidden></div>
       </form>
     </main>
   </body>

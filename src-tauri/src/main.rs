@@ -95,6 +95,12 @@ struct UserImportRow {
     first_name: Option<String>,
     last_name: Option<String>,
     position: Option<String>,
+    failed_attempts: Option<i64>,
+    locked_until: Option<String>,
+    last_failed_at: Option<String>,
+    must_change_password: Option<i64>,
+    totp_secret: Option<String>,
+    totp_enabled: Option<i64>,
 }
 
 const ENSURE_HELP_TABLE_SQL: &str = r#"
@@ -176,10 +182,30 @@ fn ensure_users_table(conn: &Connection) -> rusqlite::Result<()> {
           is_active     INTEGER NOT NULL DEFAULT 1,
           first_name    TEXT,
           last_name     TEXT,
-          position      TEXT
+          position      TEXT,
+          failed_attempts INTEGER NOT NULL DEFAULT 0,
+          locked_until TEXT,
+          last_failed_at TEXT,
+          must_change_password INTEGER NOT NULL DEFAULT 0,
+          totp_secret TEXT,
+          totp_enabled INTEGER NOT NULL DEFAULT 0
         )
         "#,
-    )
+    )?;
+    let security_columns = [
+        ("failed_attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("locked_until", "TEXT"),
+        ("last_failed_at", "TEXT"),
+        ("must_change_password", "INTEGER NOT NULL DEFAULT 0"),
+        ("totp_secret", "TEXT"),
+        ("totp_enabled", "INTEGER NOT NULL DEFAULT 0"),
+    ];
+    for (name, definition) in security_columns {
+        if !source_column_exists(conn, "users", name)? {
+            conn.execute(&format!("ALTER TABLE users ADD COLUMN {name} {definition}"), [])?;
+        }
+    }
+    Ok(())
 }
 
 fn license_file_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -285,7 +311,14 @@ fn reset_password_with_recovery_code(
         .map_err(|e| format!("Nie udało się rozpocząć resetu hasła: {e}"))?;
     let affected = tx
         .execute(
-            "UPDATE users SET password_hash = ? WHERE username = ?",
+            r#"
+            UPDATE users
+               SET password_hash = ?,
+                   failed_attempts = 0,
+                   locked_until = NULL,
+                   last_failed_at = NULL
+             WHERE username = ?
+            "#,
             params![trimmed_password, trimmed_username],
         )
         .map_err(|e| format!("Nie udało się zresetować hasła: {e}"))?;
@@ -708,6 +741,12 @@ fn read_source_users(source: &Connection) -> rusqlite::Result<Vec<UserImportRow>
     let has_first_name = source_column_exists(source, "users", "first_name")?;
     let has_last_name = source_column_exists(source, "users", "last_name")?;
     let has_position = source_column_exists(source, "users", "position")?;
+    let has_failed_attempts = source_column_exists(source, "users", "failed_attempts")?;
+    let has_locked_until = source_column_exists(source, "users", "locked_until")?;
+    let has_last_failed_at = source_column_exists(source, "users", "last_failed_at")?;
+    let has_must_change_password = source_column_exists(source, "users", "must_change_password")?;
+    let has_totp_secret = source_column_exists(source, "users", "totp_secret")?;
+    let has_totp_enabled = source_column_exists(source, "users", "totp_enabled")?;
     let first_name_select = if has_first_name {
         "first_name"
     } else {
@@ -723,10 +762,43 @@ fn read_source_users(source: &Connection) -> rusqlite::Result<Vec<UserImportRow>
     } else {
         "NULL AS position"
     };
+    let failed_attempts_select = if has_failed_attempts {
+        "failed_attempts"
+    } else {
+        "0 AS failed_attempts"
+    };
+    let locked_until_select = if has_locked_until {
+        "locked_until"
+    } else {
+        "NULL AS locked_until"
+    };
+    let last_failed_at_select = if has_last_failed_at {
+        "last_failed_at"
+    } else {
+        "NULL AS last_failed_at"
+    };
+    let must_change_password_select = if has_must_change_password {
+        "must_change_password"
+    } else {
+        "0 AS must_change_password"
+    };
+    let totp_secret_select = if has_totp_secret {
+        "totp_secret"
+    } else {
+        "NULL AS totp_secret"
+    };
+    let totp_enabled_select = if has_totp_enabled {
+        "totp_enabled"
+    } else {
+        "0 AS totp_enabled"
+    };
     let mut stmt = source.prepare(
         &format!(
             r#"
-        SELECT id, username, password_hash, role, is_active, {first_name_select}, {last_name_select}, {position_select}
+        SELECT id, username, password_hash, role, is_active,
+               {first_name_select}, {last_name_select}, {position_select},
+               {failed_attempts_select}, {locked_until_select}, {last_failed_at_select},
+               {must_change_password_select}, {totp_secret_select}, {totp_enabled_select}
         FROM users
         ORDER BY id
         "#,
@@ -742,6 +814,12 @@ fn read_source_users(source: &Connection) -> rusqlite::Result<Vec<UserImportRow>
             first_name: row.get(5)?,
             last_name: row.get(6)?,
             position: row.get(7)?,
+            failed_attempts: row.get(8)?,
+            locked_until: row.get(9)?,
+            last_failed_at: row.get(10)?,
+            must_change_password: row.get(11)?,
+            totp_secret: row.get(12)?,
+            totp_enabled: row.get(13)?,
         })
     })?;
     rows.collect()
@@ -799,7 +877,13 @@ fn ensure_target_schema(target: &Transaction<'_>) -> rusqlite::Result<()> {
           is_active     INTEGER NOT NULL DEFAULT 1,
           first_name    TEXT,
           last_name     TEXT,
-          position      TEXT
+          position      TEXT,
+          failed_attempts INTEGER NOT NULL DEFAULT 0,
+          locked_until TEXT,
+          last_failed_at TEXT,
+          must_change_password INTEGER NOT NULL DEFAULT 0,
+          totp_secret TEXT,
+          totp_enabled INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_authorized_persons_person_uuid_unique
@@ -1046,8 +1130,9 @@ fn import_replace(
         target.execute(
             r#"
             INSERT INTO users (
-              id, username, password_hash, role, is_active, first_name, last_name, position
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              id, username, password_hash, role, is_active, first_name, last_name, position,
+              failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             params![
                 user.id,
@@ -1058,6 +1143,12 @@ fn import_replace(
                 user.first_name,
                 user.last_name,
                 user.position,
+                user.failed_attempts,
+                user.locked_until,
+                user.last_failed_at,
+                user.must_change_password,
+                user.totp_secret,
+                user.totp_enabled,
             ],
         )?;
     }
@@ -1315,8 +1406,9 @@ fn import_append(
         let affected = target.execute(
             r#"
             INSERT OR IGNORE INTO users (
-              username, password_hash, role, is_active, first_name, last_name, position
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+              username, password_hash, role, is_active, first_name, last_name, position,
+              failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             params![
                 user.username,
@@ -1326,6 +1418,12 @@ fn import_append(
                 user.first_name,
                 user.last_name,
                 user.position,
+                user.failed_attempts,
+                user.locked_until,
+                user.last_failed_at,
+                user.must_change_password,
+                user.totp_secret,
+                user.totp_enabled,
             ],
         )?;
         if affected > 0 {

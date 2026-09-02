@@ -835,6 +835,10 @@ h2 {
   background: #ffffff;
 }
 
+.table-row span {
+  white-space: pre-line;
+}
+
 .table-row.muted {
   color: var(--muted);
   background: #f7f5f0;

@@ -1,0 +1,10 @@
+[advisories]
+ignore = [
+  # Pulled into Cargo.lock by sqlx's optional MySQL support. The application
+  # enables only the SQLite feature and RustSec currently lists no fixed rsa release.
+  "RUSTSEC-2023-0071",
+
+  # Pulled into Cargo.lock through rust_decimal/sqlx. The application does not
+  # use rkyv APIs directly, and rust_decimal 1.42.x still requires rkyv 0.7.x.
+  "RUSTSEC-2026-0235",
+]

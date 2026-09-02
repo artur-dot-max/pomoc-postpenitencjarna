@@ -2,6 +2,10 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import bcrypt from "bcryptjs";
+import * as OTPAuth from "otpauth";
+import QRCode from "qrcode";
+import writeXlsxFile from "write-excel-file/browser";
 
 type Person = {
   id: number;
@@ -82,21 +86,15 @@ type ReportDataset = {
   summary: ReportSummary;
 };
 
-let excelJsModulePromise: Promise<typeof import("exceljs")> | null = null;
-
-function loadExcelJs() {
-  if (!excelJsModulePromise) {
-    excelJsModulePromise = import("exceljs");
-  }
-  return excelJsModulePromise;
-}
-
 type AppRole = "Admin" | "Staff" | "ReadOnly";
 
 type AuthUser = {
   id: number;
   username: string;
   role: AppRole;
+  first_name?: string | null;
+  last_name?: string | null;
+  totp_enabled?: number;
 };
 
 type UserRow = {
@@ -108,6 +106,12 @@ type UserRow = {
   first_name?: string;
   last_name?: string;
   position?: string;
+  failed_attempts?: number;
+  locked_until?: string | null;
+  last_failed_at?: string | null;
+  must_change_password?: number;
+  totp_secret?: string | null;
+  totp_enabled?: number;
 };
 
 type LicenseStatus = {
@@ -129,6 +133,12 @@ const SESSION_USER_KEY = "sessionUser";
 const PASSWORD_RESET_CODE_KEY = "passwordResetCode";
 const PASSWORD_RESET_NOTICE_KEY = "passwordResetNotice";
 const SELECTED_PERSON_UUID_KEY = "selectedPersonUuid";
+const BCRYPT_PREFIX = "$2";
+const BCRYPT_COST = 12;
+const TOTP_ISSUER = "pomoc-postpenitencjarna";
+const TOTP_DIGITS = 6;
+const TOTP_PERIOD = 30;
+const TOTP_WINDOW = 1;
 
 type ContractDatabaseRecord = {
   id: number;
@@ -386,6 +396,69 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function isBcryptHash(value: string) {
+  return value.startsWith(BCRYPT_PREFIX);
+}
+
+function validatePassword(password: string): string | null {
+  const value = String(password ?? "").trim();
+  if (value.length < 8) return "Hasło musi mieć co najmniej 8 znaków.";
+  if (/\s/.test(value)) return "Hasło nie może zawierać spacji ani białych znaków.";
+  if (!/^[\x21-\x7E]+$/.test(value)) return "Hasło może zawierać tylko znaki ASCII bez polskich znaków.";
+  if (!/[A-Za-z]/.test(value) || !/[0-9]/.test(value)) {
+    return "Hasło musi zawierać co najmniej jedną literę i jedną cyfrę.";
+  }
+  return null;
+}
+
+function hashPassword(password: string) {
+  return bcrypt.hashSync(password, BCRYPT_COST);
+}
+
+function verifyPassword(password: string, storedHash: string) {
+  if (!storedHash) return false;
+  if (!isBcryptHash(storedHash)) return password === storedHash;
+  return bcrypt.compareSync(password, storedHash);
+}
+
+function makeTotp(secretBase32: string, label: string) {
+  return new OTPAuth.TOTP({
+    issuer: TOTP_ISSUER,
+    label,
+    algorithm: "SHA1",
+    digits: TOTP_DIGITS,
+    period: TOTP_PERIOD,
+    secret: OTPAuth.Secret.fromBase32(secretBase32),
+  });
+}
+
+function cleanTotpCode(value: string) {
+  return String(value ?? "").replace(/\s+/g, "");
+}
+
+function validateTotpToken(secretBase32: string, token: string) {
+  const normalized = cleanTotpCode(token);
+  if (!/^\d{6}$/.test(normalized)) return false;
+  const delta = OTPAuth.TOTP.validate({
+    secret: OTPAuth.Secret.fromBase32(secretBase32),
+    token: normalized,
+    algorithm: "SHA1",
+    digits: TOTP_DIGITS,
+    period: TOTP_PERIOD,
+    window: TOTP_WINDOW,
+  });
+  return delta !== null;
+}
+
+function workerDisplayName(user: Pick<UserRow, "username" | "first_name" | "last_name">) {
+  return `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() || user.username;
+}
+
+function spreadsheetSafe(value: string) {
+  const text = String(value ?? "");
+  return /^[=+\-@]/.test(text) ? `'${text}` : text;
 }
 
 function parseDateInput(value: string) {
@@ -959,6 +1032,24 @@ async function ensureUsersTable() {
   if (!hasFirstName) await db.execute("ALTER TABLE users ADD COLUMN first_name TEXT");
   if (!hasLastName) await db.execute("ALTER TABLE users ADD COLUMN last_name TEXT");
   if (!hasPosition) await db.execute("ALTER TABLE users ADD COLUMN position TEXT");
+  if (!columns.some((column) => column.name === "failed_attempts")) {
+    await db.execute("ALTER TABLE users ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!columns.some((column) => column.name === "locked_until")) {
+    await db.execute("ALTER TABLE users ADD COLUMN locked_until TEXT");
+  }
+  if (!columns.some((column) => column.name === "last_failed_at")) {
+    await db.execute("ALTER TABLE users ADD COLUMN last_failed_at TEXT");
+  }
+  if (!columns.some((column) => column.name === "must_change_password")) {
+    await db.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!columns.some((column) => column.name === "totp_secret")) {
+    await db.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT");
+  }
+  if (!columns.some((column) => column.name === "totp_enabled")) {
+    await db.execute("ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 async function ensureDefaultUsers() {
@@ -976,7 +1067,7 @@ async function ensureDefaultUsers() {
     if (!existing.length) {
       await db.execute(
         "INSERT INTO users (username, password_hash, role, is_active) VALUES (?, ?, ?, 1)",
-        [user.username, "Temp1234", user.role]
+        [user.username, hashPassword("Temp1234"), user.role]
       );
     }
   }
@@ -986,7 +1077,9 @@ async function snapshotUsers() {
   await ensureUsersTable();
   const db = await getDb();
   return db.select<UserRow[]>(
-    "SELECT id, username, password_hash, role, is_active, first_name, last_name, position FROM users ORDER BY id ASC"
+    `SELECT id, username, password_hash, role, is_active, first_name, last_name, position,
+            failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+     FROM users ORDER BY id ASC`
   );
 }
 
@@ -1001,8 +1094,9 @@ async function seedUsers(users: UserRow[]) {
   for (const user of users) {
     await db.execute(
       `INSERT OR IGNORE INTO users (
-        username, password_hash, role, is_active, first_name, last_name, position
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        username, password_hash, role, is_active, first_name, last_name, position,
+        failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         user.username,
         user.password_hash,
@@ -1011,6 +1105,12 @@ async function seedUsers(users: UserRow[]) {
         user.first_name ?? null,
         user.last_name ?? null,
         user.position ?? null,
+        user.failed_attempts ?? 0,
+        user.locked_until ?? null,
+        user.last_failed_at ?? null,
+        user.must_change_password ?? 0,
+        user.totp_secret ?? null,
+        user.totp_enabled ?? 0,
       ]
     );
   }
@@ -1706,8 +1806,14 @@ window.addEventListener("DOMContentLoaded", () => {
     const loginExit = document.querySelector<HTMLButtonElement>("#login-exit");
     const loginMessage = document.querySelector<HTMLDivElement>("#login-message");
     const loginHint = document.querySelector<HTMLParagraphElement>("#login-hint");
+    const totpLoginForm = document.querySelector<HTMLFormElement>("#totp-login-form");
+    const totpLoginMessage = document.querySelector<HTMLDivElement>("#totp-login-message");
+    const totpBackToPassword = document.querySelector<HTMLButtonElement>("#totp-back-to-password");
     const resetPasswordForm = document.querySelector<HTMLFormElement>("#reset-password-form");
     const resetPasswordMessage = document.querySelector<HTMLDivElement>("#reset-password-message");
+    const totpResetForm = document.querySelector<HTMLFormElement>("#totp-reset-password-form");
+    const showTotpResetButton = document.querySelector<HTMLButtonElement>("#show-totp-reset");
+    const totpResetMessage = document.querySelector<HTMLDivElement>("#totp-reset-password-message");
     const workersPage = document.querySelector<HTMLElement>("#workers-page");
     const workersMessage = document.querySelector<HTMLDivElement>("#workers-message");
     const workersSelfDataMessage = document.querySelector<HTMLDivElement>("#workers-self-data-message");
@@ -1723,6 +1829,14 @@ window.addEventListener("DOMContentLoaded", () => {
     const workersList = document.querySelector<HTMLDivElement>("#workers-list");
     const adminPasswordForm = document.querySelector<HTMLFormElement>("#admin-password-form");
     const adminPasswordUser = document.querySelector<HTMLSelectElement>("#admin-password-user");
+    const totpSection = document.querySelector<HTMLElement>("#totp-section");
+    const totpUserField = document.querySelector<HTMLElement>("#totp-user-field");
+    const totpUserSelect = document.querySelector<HTMLSelectElement>("#totp-user-select");
+    const totpStatus = document.querySelector<HTMLParagraphElement>("#totp-status");
+    const totpStart = document.querySelector<HTMLButtonElement>("#totp-start");
+    const totpDisable = document.querySelector<HTMLButtonElement>("#totp-disable");
+    const totpSetupBox = document.querySelector<HTMLDivElement>("#totp-setup-box");
+    const totpMessage = document.querySelector<HTMLDivElement>("#totp-message");
     const selfDataForm = document.querySelector<HTMLFormElement>("#self-data-form");
     const selfPasswordForm = document.querySelector<HTMLFormElement>("#self-password-form");
     const peselInput = form?.elements.namedItem("pesel") as HTMLInputElement | null;
@@ -1866,8 +1980,84 @@ window.addEventListener("DOMContentLoaded", () => {
       showAppToast(text, variant);
     }
 
+    function setTotpMessage(text: string, variant: "success" | "error") {
+      if (!totpMessage) return;
+      totpMessage.textContent = text;
+      totpMessage.hidden = false;
+      totpMessage.classList.remove("success", "error");
+      totpMessage.classList.add(variant);
+      showAppToast(text, variant);
+    }
+
     let loginInitDone = false;
     let loginAllowed = false;
+    let pendingTotpUser: UserRow | null = null;
+
+    function setTotpLoginMessage(text: string, variant: "success" | "error") {
+      if (!totpLoginMessage) return;
+      totpLoginMessage.textContent = text;
+      totpLoginMessage.hidden = false;
+      totpLoginMessage.classList.remove("success", "error");
+      totpLoginMessage.classList.add(variant);
+    }
+
+    function setTotpResetMessage(text: string, variant: "success" | "error") {
+      if (!totpResetMessage) return;
+      totpResetMessage.textContent = text;
+      totpResetMessage.hidden = false;
+      totpResetMessage.classList.remove("success", "error");
+      totpResetMessage.classList.add(variant);
+    }
+
+    async function registerFailedLogin(user: UserRow) {
+      const db = await getDb();
+      const nextAttempts = Number(user.failed_attempts ?? 0) + 1;
+      const lockedUntil = nextAttempts >= 5 ? new Date(Date.now() + 2 * 60 * 1000).toISOString() : null;
+      await db.execute(
+        `UPDATE users
+         SET failed_attempts = ?,
+             last_failed_at = ?,
+             locked_until = COALESCE(?, locked_until)
+         WHERE id = ?`,
+        [nextAttempts, new Date().toISOString(), lockedUntil, user.id]
+      );
+      if (lockedUntil) {
+        throw new Error("Konto zostało zablokowane na 2 minuty po zbyt wielu błędnych próbach.");
+      }
+    }
+
+    async function clearFailedLoginState(userId: number) {
+      const db = await getDb();
+      await db.execute(
+        `UPDATE users
+         SET failed_attempts = 0,
+             locked_until = NULL,
+             last_failed_at = NULL
+         WHERE id = ?`,
+        [userId]
+      );
+    }
+
+    function assertNotLocked(user: UserRow) {
+      const lockedUntilMs = user.locked_until ? new Date(String(user.locked_until)).getTime() : 0;
+      if (lockedUntilMs && lockedUntilMs > Date.now()) {
+        const sec = Math.max(1, Math.ceil((lockedUntilMs - Date.now()) / 1000));
+        throw new Error(`Konto jest zablokowane. Spróbuj ponownie za ${sec} s.`);
+      }
+    }
+
+    async function finishLogin(user: UserRow) {
+      await clearFailedLoginState(user.id);
+      setSessionUser({
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        first_name: user.first_name ?? null,
+        last_name: user.last_name ?? null,
+        totp_enabled: user.totp_enabled ?? 0,
+      });
+      window.location.href = "/index.html";
+    }
 
     loginForm?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -1892,17 +2082,82 @@ window.addEventListener("DOMContentLoaded", () => {
 
         const db = await getDb();
         const users = await db.select<UserRow[]>(
-          "SELECT id, username, password_hash, role, is_active FROM users WHERE username = ? LIMIT 1",
-          [username]
+          `SELECT id, username, password_hash, role, is_active, first_name, last_name, position,
+                  failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+           FROM users WHERE username = ? LIMIT 1`,
+          [username.toLowerCase()]
         );
         const user = users[0];
-        if (!user || user.is_active !== 1 || user.password_hash !== password) {
+        if (!user || user.is_active !== 1) {
           setLoginMessage("Nieprawidłowy login lub hasło.", "error");
           return;
         }
+        try {
+          assertNotLocked(user);
+          if (!verifyPassword(password, user.password_hash)) {
+            await registerFailedLogin(user);
+            setLoginMessage("Nieprawidłowy login lub hasło.", "error");
+            return;
+          }
 
-        setSessionUser({ id: user.id, username: user.username, role: user.role });
-        window.location.href = "/index.html";
+          if (!isBcryptHash(user.password_hash)) {
+            await db.execute("UPDATE users SET password_hash = ? WHERE id = ?", [hashPassword(password), user.id]);
+          }
+
+          if (Number(user.totp_enabled ?? 0) === 1) {
+            pendingTotpUser = user;
+            loginForm.hidden = true;
+            if (totpLoginForm) totpLoginForm.hidden = false;
+            setLoginMessage("Podaj kod z Google Authenticator.", "success");
+            return;
+          }
+
+          await finishLogin(user);
+        } catch (error) {
+          setLoginMessage(getInvokeErrorMessage(error, "Nieprawidłowy login lub hasło."), "error");
+        }
+      })();
+    });
+
+    totpBackToPassword?.addEventListener("click", () => {
+      pendingTotpUser = null;
+      if (totpLoginForm) totpLoginForm.hidden = true;
+      if (loginForm) loginForm.hidden = false;
+    });
+
+    totpLoginForm?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void (async () => {
+        if (!totpLoginForm || !pendingTotpUser) return;
+        const formData = new FormData(totpLoginForm);
+        const code = cleanTotpCode(String(formData.get("totp_code") ?? ""));
+        if (!/^\d{6}$/.test(code)) {
+          setTotpLoginMessage("Wpisz 6 cyfr z aplikacji uwierzytelniającej.", "error");
+          return;
+        }
+        try {
+          const db = await getDb();
+          const rows = await db.select<UserRow[]>(
+            `SELECT id, username, password_hash, role, is_active, first_name, last_name, position,
+                    failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+             FROM users WHERE id = ? LIMIT 1`,
+            [pendingTotpUser.id]
+          );
+          const user = rows[0];
+          if (!user || user.is_active !== 1 || !user.totp_secret || Number(user.totp_enabled ?? 0) !== 1) {
+            setTotpLoginMessage("Nie można zweryfikować kodu dla tego konta.", "error");
+            return;
+          }
+          assertNotLocked(user);
+          if (!validateTotpToken(user.totp_secret, code)) {
+            await registerFailedLogin(user);
+            setTotpLoginMessage("Nieprawidłowy kod z aplikacji uwierzytelniającej.", "error");
+            return;
+          }
+          await finishLogin(user);
+        } catch (error) {
+          setTotpLoginMessage(getInvokeErrorMessage(error, "Nie udało się zweryfikować kodu."), "error");
+        }
       })();
     });
 
@@ -2029,10 +2284,15 @@ window.addEventListener("DOMContentLoaded", () => {
             setResetPasswordMessage("Nowe hasło i powtórzenie hasła muszą być identyczne.", "error");
             return;
           }
+          const passwordError = validatePassword(newPassword);
+          if (passwordError) {
+            setResetPasswordMessage(passwordError, "error");
+            return;
+          }
           try {
             await invoke("reset_password_with_recovery_code", {
               username,
-              newPassword,
+              newPassword: hashPassword(newPassword),
               recoveryCode: resetCode,
               dbPath: getActiveDbPath(),
             });
@@ -2055,6 +2315,78 @@ window.addEventListener("DOMContentLoaded", () => {
         });
         return;
       }
+
+      showTotpResetButton?.addEventListener("click", () => {
+        if (loginForm) loginForm.hidden = true;
+        if (resetPasswordForm) resetPasswordForm.hidden = true;
+        if (totpLoginForm) totpLoginForm.hidden = true;
+        if (totpResetForm) totpResetForm.hidden = false;
+      });
+
+      totpResetForm?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void (async () => {
+          if (!totpResetForm) return;
+          const formData = new FormData(totpResetForm);
+          const username = String(formData.get("username") ?? "").trim().toLowerCase();
+          const code = cleanTotpCode(String(formData.get("totp_code") ?? ""));
+          const newPassword = String(formData.get("new_password") ?? "").trim();
+          const newPasswordRepeat = String(formData.get("new_password_repeat") ?? "").trim();
+          if (!username || !code || !newPassword || !newPasswordRepeat) {
+            setTotpResetMessage("Uzupełnij login, kod i oba pola hasła.", "error");
+            return;
+          }
+          if (!/^\d{6}$/.test(code)) {
+            setTotpResetMessage("Kod z aplikacji uwierzytelniającej musi mieć 6 cyfr.", "error");
+            return;
+          }
+          if (newPassword !== newPasswordRepeat) {
+            setTotpResetMessage("Nowe hasło i powtórzenie hasła muszą być identyczne.", "error");
+            return;
+          }
+          const passwordError = validatePassword(newPassword);
+          if (passwordError) {
+            setTotpResetMessage(passwordError, "error");
+            return;
+          }
+          try {
+            const db = await getDb();
+            const rows = await db.select<UserRow[]>(
+              `SELECT id, username, password_hash, role, is_active, first_name, last_name, position,
+                      failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+               FROM users WHERE username = ? LIMIT 1`,
+              [username]
+            );
+            const user = rows[0];
+            if (!user || user.is_active !== 1 || !user.totp_secret || Number(user.totp_enabled ?? 0) !== 1) {
+              setTotpResetMessage("To konto nie ma aktywnego Google Authenticator.", "error");
+              return;
+            }
+            assertNotLocked(user);
+            if (!validateTotpToken(user.totp_secret, code)) {
+              await registerFailedLogin(user);
+              setTotpResetMessage("Nieprawidłowy kod z aplikacji uwierzytelniającej.", "error");
+              return;
+            }
+            await db.execute(
+              `UPDATE users
+               SET password_hash = ?,
+                   failed_attempts = 0,
+                   locked_until = NULL,
+                   last_failed_at = NULL
+               WHERE id = ?`,
+              [hashPassword(newPassword), user.id]
+            );
+            sessionStorage.setItem(
+              PASSWORD_RESET_NOTICE_KEY,
+              "Hasło zostało zmienione przez Google Authenticator. Możesz się zalogować."
+            );
+            window.location.href = "/login.html";
+          } catch (error) {
+            setTotpResetMessage(getInvokeErrorMessage(error, "Nie udało się zmienić hasła."), "error");
+          }
+        })();
+      });
 
       return;
     }
@@ -2458,11 +2790,11 @@ window.addEventListener("DOMContentLoaded", () => {
         setSharedHelpMessage("Wybierz osobę udzielającą pomocy.", "error");
         return;
       }
-      if (!helpDate || !entryDate) {
-        setSharedHelpMessage("Uzupełnij datę udzielonej pomocy oraz datę wpisu.", "error");
+      if (!helpDate) {
+        setSharedHelpMessage("Uzupełnij datę udzielonej pomocy.", "error");
         return;
       }
-      if (!isDateWithinAllowedRange(helpDate) || !isDateWithinAllowedRange(entryDate)) {
+      if (!isDateWithinAllowedRange(helpDate) || (entryDate && !isDateWithinAllowedRange(entryDate))) {
         setSharedHelpMessage("Daty muszą być w zakresie od 01.01.1940 do 31.12.2050.", "error");
         return;
       }
@@ -2517,7 +2849,7 @@ window.addEventListener("DOMContentLoaded", () => {
             createHelpEventUuid(),
             personId,
             helpDate,
-            entryDate,
+            entryDate || null,
             helpType,
             selectedTypeLabel || null,
             amountUnitPerPerson,
@@ -3017,6 +3349,7 @@ window.addEventListener("DOMContentLoaded", () => {
       row.className = "table-row";
       row.dataset.helpId = String(entry.id);
       row.dataset.helpDate = entry.help_date ?? "";
+      row.dataset.entryDate = entry.entry_date ?? "";
       row.dataset.helpType = entry.help_type ?? "";
       row.dataset.helpAmount = entry.help_amount?.toString() ?? "";
       row.dataset.helpQuantity = entry.help_quantity?.toString() ?? "1";
@@ -3029,7 +3362,7 @@ window.addEventListener("DOMContentLoaded", () => {
       row.dataset.sumValue = sumValue.toString();
 
       const values = [
-        entry.help_date || "-",
+        `Pomoc: ${entry.help_date || "-"}${entry.entry_date ? `\nDokument: ${entry.entry_date}` : ""}`,
         entry.help_type_label || "-",
         entry.help_amount != null ? formatAmount(amount) : "-",
         entry.help_quantity != null ? String(quantity) : "-",
@@ -3184,6 +3517,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
       if (helpIdInput) helpIdInput.value = row.dataset.helpId ?? "";
       (helpForm.elements.namedItem("help_date") as HTMLInputElement).value = row.dataset.helpDate ?? "";
+      (helpForm.elements.namedItem("entry_date") as HTMLInputElement).value = row.dataset.entryDate ?? "";
       (helpForm.elements.namedItem("help_type") as HTMLSelectElement).value = row.dataset.helpType ?? "";
       (helpForm.elements.namedItem("help_amount") as HTMLInputElement).value =
         row.dataset.helpAmount ?? "";
@@ -3208,6 +3542,7 @@ window.addEventListener("DOMContentLoaded", () => {
       const formData = new FormData(helpForm);
       const helpIdRaw = String(formData.get("help_id") ?? "").trim();
       const helpDate = String(formData.get("help_date") ?? "").trim();
+      const entryDate = String(formData.get("entry_date") ?? "").trim();
       const helpType = String(formData.get("help_type") ?? "").trim();
       const helpAmount = String(formData.get("help_amount") ?? "").trim();
       const helpQuantity = String(formData.get("help_quantity") ?? "").trim();
@@ -3225,6 +3560,10 @@ window.addEventListener("DOMContentLoaded", () => {
         showAppToast("Data udzielonej pomocy musi być w zakresie od 01.01.1940 do 31.12.2050.", "error");
         return;
       }
+      if (entryDate && !isDateWithinAllowedRange(entryDate)) {
+        showAppToast("Data dokumentu/faktury musi być w zakresie od 01.01.1940 do 31.12.2050.", "error");
+        return;
+      }
 
       if (activePerson) {
         const supportValidation = validateHelpDateForPerson(helpDate, activePerson);
@@ -3237,11 +3576,12 @@ window.addEventListener("DOMContentLoaded", () => {
       if (helpIdRaw) {
         await db.execute(
           `UPDATE person_help_entries
-           SET help_date = ?, help_type = ?, help_type_label = ?, help_amount = ?, help_quantity = ?,
+           SET help_date = ?, entry_date = ?, help_type = ?, help_type_label = ?, help_amount = ?, help_quantity = ?,
                help_provider = ?, note = ?, updated_at = datetime('now')
            WHERE id = ? AND person_id = ?`,
           [
             helpDate || null,
+            entryDate || null,
             helpType || null,
             helpTypeLabel || null,
             helpAmount ? amountValue : null,
@@ -3255,12 +3595,13 @@ window.addEventListener("DOMContentLoaded", () => {
       } else {
         await db.execute(
           `INSERT INTO person_help_entries (
-            event_uuid, person_id, help_date, help_type, help_type_label, help_amount, help_quantity, help_provider, note, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+            event_uuid, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity, help_provider, note, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
           [
             createHelpEventUuid(),
             activePersonId,
             helpDate || null,
+            entryDate || null,
             helpType || null,
             helpTypeLabel || null,
             helpAmount ? amountValue : null,
@@ -3282,7 +3623,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     function escapeCsvCell(value: string) {
-      const escaped = value.replace(/"/g, "\"\"");
+      const escaped = spreadsheetSafe(value).replace(/"/g, "\"\"");
       return `"${escaped}"`;
     }
 
@@ -3527,6 +3868,7 @@ window.addEventListener("DOMContentLoaded", () => {
       const summary = await buildReportSummary(fromDate, toDate);
       type AllRow = {
         help_date: string | null;
+        entry_date: string | null;
         first_name: string | null;
         last_name: string | null;
         pesel: string | null;
@@ -3541,6 +3883,7 @@ window.addEventListener("DOMContentLoaded", () => {
       const rows = await db.select<AllRow[]>(
         `SELECT
           he.help_date,
+          he.entry_date,
           p.first_name,
           p.last_name,
           p.pesel,
@@ -3565,6 +3908,7 @@ window.addEventListener("DOMContentLoaded", () => {
         title: "Raport wszystkie dane",
         headers: [
           "Data pomocy",
+          "Data dokumentu/faktury",
           "Osoba",
           "PESEL",
           "Oznaczenie osoby uprawnionej",
@@ -3577,6 +3921,7 @@ window.addEventListener("DOMContentLoaded", () => {
         ],
         rows: rows.map((row) => [
           row.help_date ?? "-",
+          row.entry_date ?? "-",
           `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || "(brak)",
           row.pesel ?? "-",
           getDesignationReportLabel(row.eligible_person_designation),
@@ -3717,20 +4062,15 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     async function buildWorkbookBytes(sheets: Array<{ name: string; rows: string[][] }>) {
-      const ExcelJS = await loadExcelJs();
-      const workbook = new ExcelJS.Workbook();
-      for (const sheet of sheets) {
-        const worksheet = workbook.addWorksheet(sheet.name.slice(0, 31));
-        sheet.rows.forEach((row) => {
-          worksheet.addRow(row);
-        });
-        const widths = buildColumnWidths(sheet.rows);
-        widths.forEach((width, index) => {
-          worksheet.getColumn(index + 1).width = width;
-        });
-      }
-      const output = await workbook.xlsx.writeBuffer();
-      return new Uint8Array(output as ArrayBuffer);
+      const workbook = await writeXlsxFile(
+        sheets.map((sheet) => ({
+          name: sheet.name.slice(0, 31),
+          data: sheet.rows.map((row) => row.map((cell) => spreadsheetSafe(String(cell ?? "")))),
+          columns: buildColumnWidths(sheet.rows).map((width) => ({ width })),
+        }))
+      );
+      const blob = await workbook.toBlob();
+      return new Uint8Array(await blob.arrayBuffer());
     }
 
     function buildReportTableRows(report: ReportDataset) {
@@ -4225,7 +4565,9 @@ window.addEventListener("DOMContentLoaded", () => {
       });
     }
     if (workersPage) {
-      const isAdmin = currentUser.role === "Admin";
+      const activeUser = currentUser;
+      if (!activeUser) return;
+      const isAdmin = activeUser.role === "Admin";
       const workersHeroEyebrow = document.querySelector<HTMLElement>("#workers-hero-eyebrow");
       const workersHeroTitle = document.querySelector<HTMLElement>("#workers-hero-title");
       const selfDataTitle = document.querySelector<HTMLElement>("#self-data-title");
@@ -4234,6 +4576,8 @@ window.addEventListener("DOMContentLoaded", () => {
       if (adminList) adminList.hidden = !isAdmin;
       if (workerSelfData) workerSelfData.hidden = isAdmin;
       if (workerSelfPassword) workerSelfPassword.hidden = isAdmin;
+      if (totpSection) totpSection.hidden = false;
+      if (totpUserField) totpUserField.hidden = !isAdmin;
 
       if (!isAdmin) {
         if (workersHeroEyebrow) workersHeroEyebrow.textContent = "Moje dane";
@@ -4245,7 +4589,9 @@ window.addEventListener("DOMContentLoaded", () => {
       async function loadWorkers() {
         const db = await getDb();
         return db.select<UserRow[]>(
-          "SELECT id, username, password_hash, role, is_active, first_name, last_name, position FROM users ORDER BY id DESC"
+          `SELECT id, username, password_hash, role, is_active, first_name, last_name, position,
+                  failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+           FROM users ORDER BY id DESC`
         );
       }
 
@@ -4300,6 +4646,96 @@ window.addEventListener("DOMContentLoaded", () => {
         return `${base}${index}`;
       }
 
+      function selectedTotpUserId() {
+        if (isAdmin) {
+          const id = Number(totpUserSelect?.value ?? "0");
+          if (!Number.isInteger(id) || id <= 0) throw new Error("Wybierz użytkownika.");
+          return id;
+        }
+        return activeUser.id;
+      }
+
+      async function getUserForTotp(userId: number) {
+        const db = await getDb();
+        return (
+          await db.select<UserRow[]>(
+            `SELECT id, username, password_hash, role, is_active, first_name, last_name, position,
+                    failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+             FROM users WHERE id = ? LIMIT 1`,
+            [userId]
+          )
+        )[0];
+      }
+
+      function updateTotpStatus(users?: UserRow[]) {
+        if (!totpStatus) return;
+        const targetId = isAdmin ? Number(totpUserSelect?.value ?? "0") : activeUser.id;
+        const user = users?.find((item) => item.id === targetId);
+        const enabled = Number(user?.totp_enabled ?? (targetId === activeUser.id ? activeUser.totp_enabled : 0)) === 1;
+        if (!targetId) {
+          totpStatus.textContent = "Wybierz użytkownika.";
+          if (totpDisable) totpDisable.disabled = true;
+          return;
+        }
+        const name = user ? workerDisplayName(user) : activeUser.username;
+        totpStatus.textContent = `Status dla konta ${name}: ${enabled ? "2FA włączone" : "2FA wyłączone"}.`;
+        if (totpDisable) totpDisable.disabled = !enabled;
+      }
+
+      async function showTotpSetup(userId: number) {
+        if (!totpSetupBox) return;
+        const user = await getUserForTotp(userId);
+        if (!user) throw new Error("Nie znaleziono użytkownika.");
+        const secret = new OTPAuth.Secret({ size: 20 }).base32;
+        const label = `${workerDisplayName(user)} (${user.username})`;
+        const uri = makeTotp(secret, label).toString();
+        const qrUrl = await QRCode.toDataURL(uri, { margin: 1, width: 220 });
+        totpSetupBox.style.display = "";
+        totpSetupBox.innerHTML = `
+          <div style="display:grid; grid-template-columns:auto 1fr; gap:16px; align-items:start;">
+            <img src="${qrUrl}" alt="Kod QR do Google Authenticator" style="width:220px; height:220px; border:1px solid #d6d1c8; border-radius:8px; background:#fff;" />
+            <div>
+              <p class="section-hint">Zeskanuj kod QR w Google Authenticator, a następnie wpisz aktualny kod 6-cyfrowy.</p>
+              <label class="field">
+                <span>Sekret ręczny</span>
+                <input value="${escapeHtml(secret)}" readonly />
+              </label>
+              <label class="field">
+                <span>Kod z aplikacji</span>
+                <input id="totp-confirm-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" />
+              </label>
+              <div class="actions">
+                <button id="totp-confirm" type="button" class="btn primary">Potwierdź i włącz</button>
+                <button id="totp-cancel" type="button" class="btn ghost">Anuluj</button>
+              </div>
+            </div>
+          </div>
+        `;
+        document.querySelector<HTMLButtonElement>("#totp-cancel")!.onclick = () => {
+          totpSetupBox.style.display = "none";
+          totpSetupBox.innerHTML = "";
+        };
+        document.querySelector<HTMLButtonElement>("#totp-confirm")!.onclick = async () => {
+          const code = cleanTotpCode(document.querySelector<HTMLInputElement>("#totp-confirm-code")?.value ?? "");
+          if (!validateTotpToken(secret, code)) {
+            setTotpMessage("Nieprawidłowy kod z aplikacji uwierzytelniającej.", "error");
+            return;
+          }
+          const db = await getDb();
+          await db.execute("UPDATE users SET totp_secret = ?, totp_enabled = 1 WHERE id = ?", [secret, userId]);
+          if (userId === activeUser.id) {
+            setSessionUser({ ...activeUser, totp_enabled: 1 });
+            activeUser.totp_enabled = 1;
+          }
+          totpSetupBox.style.display = "none";
+          totpSetupBox.innerHTML = "";
+          setTotpMessage("Uwierzytelnianie dwuetapowe zostało włączone.", "success");
+          if (isAdmin) await refreshAdminSections();
+          else updateTotpStatus([{ ...user, totp_enabled: 1 }]);
+        };
+        document.querySelector<HTMLInputElement>("#totp-confirm-code")?.focus();
+      }
+
       async function refreshAdminSections() {
         if (!isAdmin) return;
         const users = await loadWorkers();
@@ -4318,7 +4754,52 @@ window.addEventListener("DOMContentLoaded", () => {
             .map((user) => `<option value="${user.id}">${user.username}</option>`)
             .join("");
         }
+        if (totpUserSelect) {
+          const selected = totpUserSelect.value;
+          totpUserSelect.innerHTML = users
+            .map((user) => `<option value="${user.id}">${escapeHtml(workerDisplayName(user))} (${escapeHtml(user.username)})</option>`)
+            .join("");
+          if (selected) totpUserSelect.value = selected;
+        }
+        updateTotpStatus(users);
       }
+
+      totpUserSelect?.addEventListener("change", async () => {
+        updateTotpStatus(isAdmin ? await loadWorkers() : undefined);
+      });
+
+      totpStart?.addEventListener("click", () => {
+        void (async () => {
+          try {
+            await showTotpSetup(selectedTotpUserId());
+          } catch (error) {
+            setTotpMessage(getInvokeErrorMessage(error, "Nie udało się rozpocząć konfiguracji 2FA."), "error");
+          }
+        })();
+      });
+
+      totpDisable?.addEventListener("click", () => {
+        void (async () => {
+          try {
+            const userId = selectedTotpUserId();
+            const db = await getDb();
+            await db.execute("UPDATE users SET totp_secret = NULL, totp_enabled = 0 WHERE id = ?", [userId]);
+            if (userId === activeUser.id) {
+              setSessionUser({ ...activeUser, totp_enabled: 0 });
+              activeUser.totp_enabled = 0;
+            }
+            if (totpSetupBox) {
+              totpSetupBox.style.display = "none";
+              totpSetupBox.innerHTML = "";
+            }
+            setTotpMessage("Uwierzytelnianie dwuetapowe zostało wyłączone.", "success");
+            if (isAdmin) await refreshAdminSections();
+            else updateTotpStatus();
+          } catch (error) {
+            setTotpMessage(getInvokeErrorMessage(error, "Nie udało się wyłączyć 2FA."), "error");
+          }
+        })();
+      });
 
       if (isAdmin) {
         await refreshAdminSections();
@@ -4404,8 +4885,13 @@ window.addEventListener("DOMContentLoaded", () => {
                 [firstName, lastName, position, role, Number(workerId)]
               );
               if (password) {
+                const passwordError = validatePassword(password);
+                if (passwordError) {
+                  setWorkersMessage(passwordError, "error");
+                  return;
+                }
                 await db.execute("UPDATE users SET password_hash = ? WHERE id = ?", [
-                  password,
+                  hashPassword(password),
                   Number(workerId),
                 ]);
               }
@@ -4415,11 +4901,16 @@ window.addEventListener("DOMContentLoaded", () => {
                 setWorkersMessage("Dla nowego pracownika podaj hasło.", "error");
                 return;
               }
+              const passwordError = validatePassword(password);
+              if (passwordError) {
+                setWorkersMessage(passwordError, "error");
+                return;
+              }
               const users = await loadWorkers();
               const generatedLogin = generateUniqueLogin(firstName, lastName, users);
               await db.execute(
                 "INSERT INTO users (username, password_hash, role, is_active, first_name, last_name, position) VALUES (?, ?, ?, 1, ?, ?, ?)",
-                [generatedLogin, password, role, firstName, lastName, position]
+                [generatedLogin, hashPassword(password), role, firstName, lastName, position]
               );
               setWorkersMessage(`Utworzono nowe konto. Przypisany login: ${generatedLogin}`, "success");
             }
@@ -4442,18 +4933,34 @@ window.addEventListener("DOMContentLoaded", () => {
             setWorkersMessage("Wybierz użytkownika i podaj nowe hasło.", "error");
             return;
           }
+          const passwordError = validatePassword(newPassword);
+          if (passwordError) {
+            setWorkersMessage(passwordError, "error");
+            return;
+          }
           const db = await getDb();
-          await db.execute("UPDATE users SET password_hash = ? WHERE id = ?", [newPassword, userId]);
+          await db.execute(
+            `UPDATE users
+             SET password_hash = ?,
+                 failed_attempts = 0,
+                 locked_until = NULL,
+                 last_failed_at = NULL
+             WHERE id = ?`,
+            [hashPassword(newPassword), userId]
+          );
           adminPasswordForm.reset();
           setWorkersMessage("Hasło zostało zmienione.", "success");
         });
       } else {
         const db = await getDb();
         const rows = await db.select<UserRow[]>(
-          "SELECT id, username, password_hash, role, is_active, first_name, last_name, position FROM users WHERE id = ? LIMIT 1",
-          [currentUser.id]
+          `SELECT id, username, password_hash, role, is_active, first_name, last_name, position,
+                  failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+           FROM users WHERE id = ? LIMIT 1`,
+          [activeUser.id]
         );
         const profile = rows[0];
+        updateTotpStatus(profile ? [profile] : undefined);
         if (selfDataForm) {
           (selfDataForm.elements.namedItem("first_name") as HTMLInputElement).value =
             profile?.first_name ?? "";
@@ -4462,7 +4969,7 @@ window.addEventListener("DOMContentLoaded", () => {
           (selfDataForm.elements.namedItem("position") as HTMLInputElement).value =
             profile?.position ?? "";
           (selfDataForm.elements.namedItem("username") as HTMLInputElement).value =
-            profile?.username ?? currentUser.username;
+            profile?.username ?? activeUser.username;
         }
 
         selfDataForm?.addEventListener("submit", async (event) => {
@@ -4480,9 +4987,9 @@ window.addEventListener("DOMContentLoaded", () => {
           try {
             await db.execute(
               "UPDATE users SET first_name = ?, last_name = ?, position = ?, username = ? WHERE id = ?",
-              [firstName || null, lastName || null, position || null, username, currentUser.id]
+              [firstName || null, lastName || null, position || null, username, activeUser.id]
             );
-            setSessionUser({ ...currentUser, username });
+            setSessionUser({ ...activeUser, username });
             setWorkersDataMessage("Zapisano moje dane.", "success");
           } catch (error) {
             console.error("Błąd zmiany danych użytkownika:", error);
@@ -4501,21 +5008,36 @@ window.addEventListener("DOMContentLoaded", () => {
           setWorkersMessage("Podaj nowe hasło.", "error");
           return;
         }
+        const passwordError = validatePassword(newPassword);
+        if (passwordError) {
+          setWorkersMessage(passwordError, "error");
+          return;
+        }
         const db = await getDb();
         const rows = await db.select<UserRow[]>(
-          "SELECT id, username, password_hash, role, is_active FROM users WHERE id = ? LIMIT 1",
-          [currentUser.id]
+          `SELECT id, username, password_hash, role, is_active, first_name, last_name, position,
+                  failed_attempts, locked_until, last_failed_at, must_change_password, totp_secret, totp_enabled
+           FROM users WHERE id = ? LIMIT 1`,
+          [activeUser.id]
         );
         const user = rows[0];
         if (!user) {
           setWorkersMessage("Nie znaleziono użytkownika.", "error");
           return;
         }
-        if (currentUser.role !== "Admin" && user.password_hash !== oldPassword) {
+        if (activeUser.role !== "Admin" && !verifyPassword(oldPassword, user.password_hash)) {
           setWorkersMessage("Stare hasło jest nieprawidłowe.", "error");
           return;
         }
-        await db.execute("UPDATE users SET password_hash = ? WHERE id = ?", [newPassword, currentUser.id]);
+        await db.execute(
+          `UPDATE users
+           SET password_hash = ?,
+               failed_attempts = 0,
+               locked_until = NULL,
+               last_failed_at = NULL
+           WHERE id = ?`,
+          [hashPassword(newPassword), activeUser.id]
+        );
         selfPasswordForm.reset();
         setWorkersMessage("Hasło zostało zmienione.", "success");
       });

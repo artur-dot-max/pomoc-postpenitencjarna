@@ -6,20 +6,6 @@
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dane organizacji</title>
-    <script>
-      (() => {
-        try {
-          const raw = sessionStorage.getItem("sessionUser");
-          if (!raw) {
-            window.location.replace("/login.html");
-            return;
-          }
-          JSON.parse(raw);
-        } catch {
-          window.location.replace("/login.html");
-        }
-      })();
-    </script>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
