@@ -597,6 +597,22 @@ h2 {
   font-weight: 700;
 }
 
+.shared-help-bulk-dates {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(130px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfaf7;
+}
+
+.shared-help-bulk-dates[hidden] {
+  display: none;
+}
+
 .shared-help-pagination {
   display: flex;
   justify-content: center;
@@ -612,17 +628,24 @@ h2 {
 
 .shared-person-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1.4fr) minmax(100px, 0.8fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(100px, 0.8fr);
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fbfaf7;
+}
+
+.shared-person-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
   cursor: pointer;
 }
 
-.shared-person-row input {
+.shared-person-check input {
   width: 18px;
   height: 18px;
 }
@@ -636,6 +659,43 @@ h2 {
   display: block;
   color: var(--muted);
   cursor: default;
+}
+
+.shared-person-row.with-stay-fields {
+  align-items: start;
+}
+
+.shared-stay-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(130px, 1fr)) minmax(70px, 0.5fr) minmax(100px, 0.6fr);
+  gap: 10px;
+  align-items: end;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.shared-stay-fields[hidden] {
+  display: none;
+}
+
+.shared-stay-output {
+  display: grid;
+  gap: 8px;
+}
+
+.shared-stay-output span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.shared-stay-output output {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  color: var(--accent-2);
 }
 
 .shared-help-summary {
@@ -659,6 +719,22 @@ h2 {
 .shared-help-summary span,
 .shared-help-summary strong {
   overflow-wrap: anywhere;
+}
+
+.shared-help-preview {
+  margin-top: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.shared-help-preview[hidden] {
+  display: none;
+}
+
+.shared-preview-row {
+  grid-template-columns: minmax(0, 1.3fr) minmax(130px, 0.9fr) minmax(60px, 0.35fr) minmax(100px, 0.55fr);
 }
 
 #reports-page .top-nav {
@@ -1051,7 +1127,10 @@ h2 {
 
   .shared-help-layout,
   .shared-person-row,
-  .shared-help-filters {
+  .shared-help-filters,
+  .shared-stay-fields,
+  .shared-help-bulk-dates,
+  .shared-preview-row {
     grid-template-columns: 1fr;
   }
 

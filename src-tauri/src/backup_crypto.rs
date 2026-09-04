@@ -55,9 +55,13 @@ fn archive_file_with_tool(
     let out_str = out_path
         .to_str()
         .ok_or_else(|| "Nieprawidłowa ścieżka pliku archiwum".to_string())?;
-    let input_str = input_path
-        .to_str()
-        .ok_or_else(|| "Nieprawidłowa ścieżka pliku wejściowego".to_string())?;
+    let input_dir = input_path
+        .parent()
+        .ok_or_else(|| "Nieprawidłowy folder pliku wejściowego".to_string())?;
+    let input_file_name = input_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Nieprawidłowa nazwa pliku wejściowego".to_string())?;
 
     let (candidates, args_builder): (&[&str], Box<dyn Fn(&str, &str, Option<&str>) -> Vec<String>>) =
         match kind {
@@ -103,8 +107,8 @@ fn archive_file_with_tool(
     let mut last_non_not_found_error: Option<String> = None;
 
     for candidate in candidates {
-        let args = args_builder(out_str, input_str, password);
-        let output = Command::new(candidate).args(&args).output();
+        let args = args_builder(out_str, input_file_name, password);
+        let output = Command::new(candidate).current_dir(input_dir).args(&args).output();
 
         match output {
             Ok(out) => {

@@ -60,6 +60,11 @@ struct PersonRow {
 struct HelpRow {
     id: i64,
     event_uuid: Option<String>,
+    settlement_uuid: Option<String>,
+    invoice_number: Option<String>,
+    stay_from: Option<String>,
+    stay_to: Option<String>,
+    stay_days: Option<i64>,
     person_id: i64,
     help_date: Option<String>,
     entry_date: Option<String>,
@@ -107,6 +112,11 @@ const ENSURE_HELP_TABLE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS person_help_entries (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   event_uuid      TEXT UNIQUE,
+  settlement_uuid TEXT,
+  invoice_number  TEXT,
+  stay_from       TEXT,
+  stay_to         TEXT,
+  stay_days       INTEGER,
   person_id       INTEGER NOT NULL,
   help_date       TEXT,
   entry_date      TEXT,
@@ -419,6 +429,16 @@ fn validate_export_file_name(file_name: &str, default_name: &str) -> Result<Stri
     Ok(normalized)
 }
 
+fn archive_inner_encrypted_file_name(destination: &Path) -> String {
+    let stem = destination
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("baza_danych");
+    format!("{stem}.enc")
+}
+
 fn create_database_snapshot_with_file_name(
     source_path: &PathBuf,
     file_name: &str,
@@ -652,12 +672,44 @@ fn read_source_persons(source: &Connection) -> rusqlite::Result<Vec<PersonRow>> 
 fn read_source_help(source: &Connection) -> rusqlite::Result<Vec<HelpRow>> {
     source.execute(ENSURE_HELP_TABLE_SQL, [])?;
     let has_event_uuid = source_column_exists(source, "person_help_entries", "event_uuid")?;
+    let has_settlement_uuid =
+        source_column_exists(source, "person_help_entries", "settlement_uuid")?;
+    let has_invoice_number =
+        source_column_exists(source, "person_help_entries", "invoice_number")?;
+    let has_stay_from = source_column_exists(source, "person_help_entries", "stay_from")?;
+    let has_stay_to = source_column_exists(source, "person_help_entries", "stay_to")?;
+    let has_stay_days = source_column_exists(source, "person_help_entries", "stay_days")?;
     let has_entry_date = source_column_exists(source, "person_help_entries", "entry_date")?;
     let has_note = source_column_exists(source, "person_help_entries", "note")?;
     let event_uuid_select = if has_event_uuid {
         "event_uuid"
     } else {
         "NULL AS event_uuid"
+    };
+    let settlement_uuid_select = if has_settlement_uuid {
+        "settlement_uuid"
+    } else {
+        "NULL AS settlement_uuid"
+    };
+    let invoice_number_select = if has_invoice_number {
+        "invoice_number"
+    } else {
+        "NULL AS invoice_number"
+    };
+    let stay_from_select = if has_stay_from {
+        "stay_from"
+    } else {
+        "NULL AS stay_from"
+    };
+    let stay_to_select = if has_stay_to {
+        "stay_to"
+    } else {
+        "NULL AS stay_to"
+    };
+    let stay_days_select = if has_stay_days {
+        "stay_days"
+    } else {
+        "NULL AS stay_days"
     };
     let entry_date_select = if has_entry_date {
         "entry_date"
@@ -669,7 +721,8 @@ fn read_source_help(source: &Connection) -> rusqlite::Result<Vec<HelpRow>> {
         &format!(
             r#"
         SELECT
-          id, {event_uuid_select}, person_id, help_date, {entry_date_select}, help_type, help_type_label, help_amount, help_quantity,
+          id, {event_uuid_select}, {settlement_uuid_select}, {invoice_number_select}, {stay_from_select}, {stay_to_select}, {stay_days_select},
+          person_id, help_date, {entry_date_select}, help_type, help_type_label, help_amount, help_quantity,
           help_provider, {note_select}, created_at, updated_at
         FROM person_help_entries
         ORDER BY id
@@ -680,17 +733,22 @@ fn read_source_help(source: &Connection) -> rusqlite::Result<Vec<HelpRow>> {
         Ok(HelpRow {
             id: row.get(0)?,
             event_uuid: row.get(1)?,
-            person_id: row.get(2)?,
-            help_date: row.get(3)?,
-            entry_date: row.get(4)?,
-            help_type: row.get(5)?,
-            help_type_label: row.get(6)?,
-            help_amount: row.get(7)?,
-            help_quantity: row.get(8)?,
-            help_provider: row.get(9)?,
-            note: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
+            settlement_uuid: row.get(2)?,
+            invoice_number: row.get(3)?,
+            stay_from: row.get(4)?,
+            stay_to: row.get(5)?,
+            stay_days: row.get(6)?,
+            person_id: row.get(7)?,
+            help_date: row.get(8)?,
+            entry_date: row.get(9)?,
+            help_type: row.get(10)?,
+            help_type_label: row.get(11)?,
+            help_amount: row.get(12)?,
+            help_quantity: row.get(13)?,
+            help_provider: row.get(14)?,
+            note: row.get(15)?,
+            created_at: row.get(16)?,
+            updated_at: row.get(17)?,
         })
     })?;
     rows.collect()
@@ -987,12 +1045,32 @@ fn ensure_target_schema(target: &Transaction<'_>) -> rusqlite::Result<()> {
     let mut help_stmt = target.prepare("PRAGMA table_info(person_help_entries)")?;
     let help_columns = help_stmt.query_map([], |row| row.get::<_, String>(1))?;
     let mut has_event_uuid = false;
+    let mut has_settlement_uuid = false;
+    let mut has_invoice_number = false;
+    let mut has_stay_from = false;
+    let mut has_stay_to = false;
+    let mut has_stay_days = false;
     let mut has_entry_date = false;
     let mut has_note = false;
     for column in help_columns {
         let column_name = column?;
         if column_name == "event_uuid" {
             has_event_uuid = true;
+        }
+        if column_name == "settlement_uuid" {
+            has_settlement_uuid = true;
+        }
+        if column_name == "invoice_number" {
+            has_invoice_number = true;
+        }
+        if column_name == "stay_from" {
+            has_stay_from = true;
+        }
+        if column_name == "stay_to" {
+            has_stay_to = true;
+        }
+        if column_name == "stay_days" {
+            has_stay_days = true;
         }
         if column_name == "entry_date" {
             has_entry_date = true;
@@ -1007,6 +1085,30 @@ fn ensure_target_schema(target: &Transaction<'_>) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    if !has_settlement_uuid {
+        target.execute(
+            "ALTER TABLE person_help_entries ADD COLUMN settlement_uuid TEXT",
+            [],
+        )?;
+    }
+    if !has_invoice_number {
+        target.execute(
+            "ALTER TABLE person_help_entries ADD COLUMN invoice_number TEXT",
+            [],
+        )?;
+    }
+    if !has_stay_from {
+        target.execute("ALTER TABLE person_help_entries ADD COLUMN stay_from TEXT", [])?;
+    }
+    if !has_stay_to {
+        target.execute("ALTER TABLE person_help_entries ADD COLUMN stay_to TEXT", [])?;
+    }
+    if !has_stay_days {
+        target.execute(
+            "ALTER TABLE person_help_entries ADD COLUMN stay_days INTEGER",
+            [],
+        )?;
+    }
     if !has_entry_date {
         target.execute(
             "ALTER TABLE person_help_entries ADD COLUMN entry_date TEXT",
@@ -1018,6 +1120,14 @@ fn ensure_target_schema(target: &Transaction<'_>) -> rusqlite::Result<()> {
     }
     target.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_person_help_entries_event_uuid ON person_help_entries(event_uuid)",
+        [],
+    )?;
+    target.execute(
+        "CREATE INDEX IF NOT EXISTS idx_person_help_entries_settlement_uuid ON person_help_entries(settlement_uuid)",
+        [],
+    )?;
+    target.execute(
+        "CREATE INDEX IF NOT EXISTS idx_person_help_entries_invoice_number ON person_help_entries(invoice_number)",
         [],
     )?;
     let mut org_stmt = target.prepare("PRAGMA table_info(organization_settings)")?;
@@ -1104,13 +1214,18 @@ fn import_replace(
         target.execute(
             r#"
             INSERT INTO person_help_entries (
-              id, event_uuid, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity,
+              id, event_uuid, settlement_uuid, invoice_number, stay_from, stay_to, stay_days, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity,
               help_provider, note, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             params![
                 help.id,
                 help.event_uuid,
+                help.settlement_uuid,
+                help.invoice_number,
+                help.stay_from,
+                help.stay_to,
+                help.stay_days,
                 help.person_id,
                 help.help_date,
                 help.entry_date,
@@ -1353,6 +1468,10 @@ fn import_append(
                       AND COALESCE(help_type_label, '') = COALESCE(?, '')
                       AND COALESCE(help_amount, -999999999.0) = COALESCE(?, -999999999.0)
                       AND COALESCE(help_quantity, -999999999.0) = COALESCE(?, -999999999.0)
+                      AND COALESCE(invoice_number, '') = COALESCE(?, '')
+                      AND COALESCE(stay_from, '') = COALESCE(?, '')
+                      AND COALESCE(stay_to, '') = COALESCE(?, '')
+                      AND COALESCE(stay_days, -999999999) = COALESCE(?, -999999999)
                       AND COALESCE(help_provider, '') = COALESCE(?, '')
                       AND COALESCE(note, '') = COALESCE(?, '')
                     LIMIT 1
@@ -1364,6 +1483,10 @@ fn import_append(
                         help.help_type_label,
                         help.help_amount,
                         help.help_quantity,
+                        help.invoice_number,
+                        help.stay_from,
+                        help.stay_to,
+                        help.stay_days,
                         help.help_provider,
                         help.note,
                     ],
@@ -1379,12 +1502,17 @@ fn import_append(
         target.execute(
             r#"
             INSERT INTO person_help_entries (
-              event_uuid, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity,
+              event_uuid, settlement_uuid, invoice_number, stay_from, stay_to, stay_days, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity,
               help_provider, note, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
             params![
                 help.event_uuid,
+                help.settlement_uuid,
+                help.invoice_number,
+                help.stay_from,
+                help.stay_to,
+                help.stay_days,
                 new_person_id,
                 help.help_date,
                 help.entry_date,
@@ -1618,15 +1746,25 @@ fn export_encrypted_database_archive_to_path(
             .map_err(|e| format!("Nie udało się utworzyć folderu docelowego: {e}"))?;
     }
 
-    let mut temp_enc_path = destination.clone();
-    temp_enc_path.set_file_name(format!("tmp-ministry-export-{}.enc", now_millis()));
+    let parent = destination
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let temp_dir = parent.join(format!("ministry-export-{}", now_millis()));
+    fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("Nie udało się utworzyć folderu tymczasowego eksportu: {e}"))?;
+    let temp_enc_path = temp_dir.join(archive_inner_encrypted_file_name(&destination));
 
     let snapshot_path = create_database_snapshot(&db_path)?;
-    backup_crypto::encrypt_backup_file(&snapshot_path, &temp_enc_path)?;
+    if let Err(err) = backup_crypto::encrypt_backup_file(&snapshot_path, &temp_enc_path) {
+        let _ = fs::remove_file(&snapshot_path);
+        cleanup_snapshot_path(&temp_enc_path);
+        return Err(err);
+    }
     let _ = fs::remove_file(&snapshot_path);
     let archive_result =
         backup_crypto::archive_file_without_password(&temp_enc_path, &destination, &archive_kind);
-    let _ = fs::remove_file(&temp_enc_path);
+    cleanup_snapshot_path(&temp_enc_path);
     archive_result
 }
 

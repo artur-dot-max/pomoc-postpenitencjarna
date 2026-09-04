@@ -259,6 +259,10 @@
                 <input type="date" name="entry_date" />
               </label>
               <label class="field">
+                <span>Numer faktury / dokumentu</span>
+                <input type="text" name="invoice_number" placeholder="np. FV/08/2026" />
+              </label>
+              <label class="field">
                 <span>Osoba udzielająca pomocy *</span>
                 <select name="help_provider" id="shared-help-provider">
                   <option value="">Wybierz</option>
@@ -271,6 +275,13 @@
               <label class="field">
                 <span>Ilość *</span>
                 <input type="number" step="0.01" name="help_quantity" value="1" />
+              </label>
+              <label class="field field-full-row">
+                <span>Sposób podziału *</span>
+                <select name="split_mode" id="shared-help-split-mode">
+                  <option value="equal">Równy podział między zaznaczone osoby</option>
+                  <option value="stay">Proporcjonalnie według okresu pobytu</option>
+                </select>
               </label>
               <label class="field field-full-row">
                 <span>Notatka</span>
@@ -299,6 +310,17 @@
                   <span id="shared-help-selected-count">Zaznaczono: 0</span>
                   <button type="button" class="btn ghost" id="shared-help-clear-selection">Wyczyść zaznaczenie</button>
                 </div>
+                <div class="shared-help-bulk-dates" id="shared-help-bulk-dates" hidden>
+                  <label class="field">
+                    <span>Od</span>
+                    <input type="date" id="shared-help-bulk-from" />
+                  </label>
+                  <label class="field">
+                    <span>Do</span>
+                    <input type="date" id="shared-help-bulk-to" />
+                  </label>
+                  <button type="button" class="btn ghost" id="shared-help-apply-bulk-dates">Ustaw dla zaznaczonych</button>
+                </div>
                 <div class="shared-person-list" id="shared-help-people-list"></div>
                 <div class="shared-help-pagination">
                   <button type="button" class="btn ghost" id="shared-help-prev-page">Poprzednia</button>
@@ -317,15 +339,40 @@
                   <strong data-summary="people">0</strong>
                 </div>
                 <div>
-                  <span>Kwota na osobę</span>
+                  <span>Suma dni pobytu</span>
+                  <strong data-summary="stay-days">-</strong>
+                </div>
+                <div>
+                  <span>Podział</span>
                   <strong data-summary="per-person">-</strong>
+                </div>
+                <div>
+                  <span>Kontrola sumy</span>
+                  <strong data-summary="control">0,00 zł</strong>
                 </div>
               </section>
             </div>
 
+            <section class="shared-help-preview" id="shared-help-preview" hidden>
+              <div class="section-header compact">
+                <h3>Podgląd rozliczenia</h3>
+                <p class="section-hint">Sprawdź kwoty przed dopisaniem wpisów do kart osób.</p>
+              </div>
+              <div class="table">
+                <div class="table-head shared-preview-row">
+                  <span>Osoba</span>
+                  <span>Okres</span>
+                  <span>Dni</span>
+                  <span>Kwota</span>
+                </div>
+                <div class="table-body" id="shared-help-preview-list"></div>
+              </div>
+            </section>
+
             <div class="actions">
               <button type="reset" class="btn ghost">Wyczyść</button>
-              <button type="submit" class="btn primary">Podziel i dopisz pomoc</button>
+              <button type="submit" class="btn primary">Przygotuj podgląd</button>
+              <button type="button" class="btn primary" id="shared-help-save-preview" hidden>Zapisz rozliczenie</button>
             </div>
             <div class="save-message" id="shared-help-message" hidden></div>
           </form>

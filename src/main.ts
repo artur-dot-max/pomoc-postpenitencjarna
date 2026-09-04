@@ -49,6 +49,11 @@ type OrgSettings = {
 type HelpEntry = {
   id: number;
   event_uuid?: string;
+  settlement_uuid?: string;
+  invoice_number?: string;
+  stay_from?: string;
+  stay_to?: string;
+  stay_days?: number;
   person_id: number;
   help_date?: string;
   entry_date?: string;
@@ -58,6 +63,35 @@ type HelpEntry = {
   help_quantity?: number;
   help_provider?: string;
   note?: string;
+};
+
+type SharedHelpSplitMode = "equal" | "stay";
+
+type SharedHelpAllocation = {
+  personId: number;
+  personName?: string;
+  amount: number;
+  weight: number;
+  stayFrom?: string;
+  stayTo?: string;
+  stayDays?: number;
+};
+
+type SharedHelpDraft = {
+  helpDate: string;
+  entryDate: string;
+  invoiceNumber: string;
+  helpType: string;
+  helpTypeLabel: string;
+  helpProvider: string;
+  quantityValue: number;
+  totalAmount: number;
+  selectedCount: number;
+  splitMode: SharedHelpSplitMode;
+  splitSummary: string;
+  totalStayDays: number;
+  note: string;
+  allocations: SharedHelpAllocation[];
 };
 
 type ImportDbResult = {
@@ -969,6 +1003,11 @@ async function ensureHelpTable() {
     `CREATE TABLE IF NOT EXISTS person_help_entries (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       event_uuid      TEXT UNIQUE,
+      settlement_uuid TEXT,
+      invoice_number  TEXT,
+      stay_from       TEXT,
+      stay_to         TEXT,
+      stay_days       INTEGER,
       person_id       INTEGER NOT NULL,
       help_date       TEXT,
       entry_date      TEXT,
@@ -985,10 +1024,30 @@ async function ensureHelpTable() {
   type TableInfoRow = { name: string };
   const columns = await db.select<TableInfoRow[]>("PRAGMA table_info(person_help_entries)");
   const hasEventUuid = columns.some((column) => column.name === "event_uuid");
+  const hasSettlementUuid = columns.some((column) => column.name === "settlement_uuid");
+  const hasInvoiceNumber = columns.some((column) => column.name === "invoice_number");
+  const hasStayFrom = columns.some((column) => column.name === "stay_from");
+  const hasStayTo = columns.some((column) => column.name === "stay_to");
+  const hasStayDays = columns.some((column) => column.name === "stay_days");
   const hasEntryDate = columns.some((column) => column.name === "entry_date");
   const hasNote = columns.some((column) => column.name === "note");
   if (!hasEventUuid) {
     await db.execute("ALTER TABLE person_help_entries ADD COLUMN event_uuid TEXT");
+  }
+  if (!hasSettlementUuid) {
+    await db.execute("ALTER TABLE person_help_entries ADD COLUMN settlement_uuid TEXT");
+  }
+  if (!hasInvoiceNumber) {
+    await db.execute("ALTER TABLE person_help_entries ADD COLUMN invoice_number TEXT");
+  }
+  if (!hasStayFrom) {
+    await db.execute("ALTER TABLE person_help_entries ADD COLUMN stay_from TEXT");
+  }
+  if (!hasStayTo) {
+    await db.execute("ALTER TABLE person_help_entries ADD COLUMN stay_to TEXT");
+  }
+  if (!hasStayDays) {
+    await db.execute("ALTER TABLE person_help_entries ADD COLUMN stay_days INTEGER");
   }
   if (!hasEntryDate) {
     await db.execute("ALTER TABLE person_help_entries ADD COLUMN entry_date TEXT");
@@ -998,6 +1057,12 @@ async function ensureHelpTable() {
   }
   await db.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_person_help_entries_event_uuid ON person_help_entries(event_uuid)"
+  );
+  await db.execute(
+    "CREATE INDEX IF NOT EXISTS idx_person_help_entries_settlement_uuid ON person_help_entries(settlement_uuid)"
+  );
+  await db.execute(
+    "CREATE INDEX IF NOT EXISTS idx_person_help_entries_invoice_number ON person_help_entries(invoice_number)"
   );
   const rowsWithoutUuid = await db.select<Array<{ id: number }>>(
     `SELECT id
@@ -1236,7 +1301,12 @@ window.addEventListener("DOMContentLoaded", () => {
     const sharedHelpPeopleList = document.querySelector<HTMLDivElement>("#shared-help-people-list");
     const sharedHelpSummary = document.querySelector<HTMLDivElement>("#shared-help-summary");
     const sharedHelpMessage = document.querySelector<HTMLDivElement>("#shared-help-message");
+    const sharedHelpPreview = document.querySelector<HTMLElement>("#shared-help-preview");
+    const sharedHelpPreviewList = document.querySelector<HTMLDivElement>("#shared-help-preview-list");
+    const sharedHelpSavePreview = document.querySelector<HTMLButtonElement>("#shared-help-save-preview");
     const sharedHelpTypeSelect = document.querySelector<HTMLSelectElement>("#shared-help-type");
+    const sharedHelpSplitModeSelect =
+      document.querySelector<HTMLSelectElement>("#shared-help-split-mode");
     const sharedHelpProviderSelect =
       document.querySelector<HTMLSelectElement>("#shared-help-provider");
     const sharedHelpFilterName = document.querySelector<HTMLInputElement>("#shared-help-filter-name");
@@ -1250,12 +1320,18 @@ window.addEventListener("DOMContentLoaded", () => {
     const sharedHelpPrevPage = document.querySelector<HTMLButtonElement>("#shared-help-prev-page");
     const sharedHelpNextPage = document.querySelector<HTMLButtonElement>("#shared-help-next-page");
     const sharedHelpPageInfo = document.querySelector<HTMLSpanElement>("#shared-help-page-info");
+    const sharedHelpBulkDates = document.querySelector<HTMLDivElement>("#shared-help-bulk-dates");
+    const sharedHelpBulkFrom = document.querySelector<HTMLInputElement>("#shared-help-bulk-from");
+    const sharedHelpBulkTo = document.querySelector<HTMLInputElement>("#shared-help-bulk-to");
+    const sharedHelpApplyBulkDates =
+      document.querySelector<HTMLButtonElement>("#shared-help-apply-bulk-dates");
     const saveMessage = document.querySelector<HTMLDivElement>("#save-message");
     const designationSelect =
       form?.elements.namedItem("eligible_person_designation") as HTMLSelectElement | null;
     const assistanceExtensionField = document.querySelector<HTMLLabelElement>(
       "#assistance-extension-field"
     );
+    let pendingSharedHelpDraft: SharedHelpDraft | null = null;
     const assistanceExtensionApproved =
       form?.elements.namedItem("assistance_extension_approved") as HTMLInputElement | null;
     const editAssistanceExtensionField = document.querySelector<HTMLLabelElement>(
@@ -2722,8 +2798,18 @@ window.addEventListener("DOMContentLoaded", () => {
 
     setupAccordion(toggleSharedHelp, sharedHelpPanel, sharedHelpMeta ?? null);
 
-    sharedHelpForm?.addEventListener("input", updateSharedHelpSummary);
+    sharedHelpForm?.addEventListener("input", () => {
+      clearSharedHelpPreview();
+      updateSharedHelpSummary();
+    });
+    sharedHelpSplitModeSelect?.addEventListener("change", () => {
+      clearSharedHelpPreview();
+      updateSharedHelpStayFieldsVisibility();
+      updateSharedHelpSummary();
+    });
     sharedHelpPeopleList?.addEventListener("change", () => {
+      clearSharedHelpPreview();
+      updateSharedHelpStayFieldsVisibility();
       updateSharedHelpSummary();
     });
     sharedHelpFilterName?.addEventListener("input", () => {
@@ -2740,6 +2826,23 @@ window.addEventListener("DOMContentLoaded", () => {
       sharedHelpCurrentPage = 1;
       applySharedHelpPeopleFilters();
     });
+    sharedHelpApplyBulkDates?.addEventListener("click", () => {
+      const from = sharedHelpBulkFrom?.value ?? "";
+      const to = sharedHelpBulkTo?.value ?? "";
+      if (!from || !to || !isDateWithinAllowedRange(from) || !isDateWithinAllowedRange(to) || !daysInclusive(from, to)) {
+        setSharedHelpMessage("Podaj prawidłowy zakres dat do ustawienia dla zaznaczonych osób.", "error");
+        return;
+      }
+      getSelectedSharedPersonRows().forEach((row) => {
+        const fromInput = row.querySelector<HTMLInputElement>("[data-shared-stay-from]");
+        const toInput = row.querySelector<HTMLInputElement>("[data-shared-stay-to]");
+        if (fromInput) fromInput.value = from;
+        if (toInput) toInput.value = to;
+      });
+      clearSharedHelpPreview();
+      updateSharedHelpStayFieldsVisibility();
+      updateSharedHelpSummary();
+    });
     sharedHelpPrevPage?.addEventListener("click", () => {
       sharedHelpCurrentPage = Math.max(1, sharedHelpCurrentPage - 1);
       applySharedHelpPeopleFilters();
@@ -2754,14 +2857,31 @@ window.addEventListener("DOMContentLoaded", () => {
         .forEach((input) => {
           input.checked = false;
         });
+      clearSharedHelpPreview();
+      updateSharedHelpStayFieldsVisibility();
       updateSharedHelpSummary();
     });
 
     sharedHelpForm?.addEventListener("reset", () => {
       window.setTimeout(() => {
+        clearSharedHelpPreview();
+        updateSharedHelpStayFieldsVisibility();
         applySharedHelpPeopleFilters();
         updateSharedHelpSummary();
       }, 0);
+    });
+
+    sharedHelpSavePreview?.addEventListener("click", async () => {
+      if (!pendingSharedHelpDraft) {
+        setSharedHelpMessage("Najpierw przygotuj podgląd rozliczenia.", "error");
+        return;
+      }
+      try {
+        await saveSharedHelpDraft(pendingSharedHelpDraft);
+      } catch (error) {
+        console.error("Nie udało się zapisać pomocy współdzielonej:", error);
+        setSharedHelpMessage("Nie udało się zapisać rozliczenia.", "error");
+      }
     });
 
     sharedHelpForm?.addEventListener("submit", async (event) => {
@@ -2771,11 +2891,13 @@ window.addEventListener("DOMContentLoaded", () => {
       const formData = new FormData(sharedHelpForm);
       const helpDate = String(formData.get("help_date") ?? "").trim();
       const entryDate = String(formData.get("entry_date") ?? "").trim();
+      const invoiceNumber = String(formData.get("invoice_number") ?? "").trim();
       const helpType = String(formData.get("help_type") ?? "").trim();
       const helpProvider = String(formData.get("help_provider") ?? "").trim();
       const selectedTypeLabel = sharedHelpTypeSelect?.selectedOptions[0]?.textContent ?? "";
       const helpAmountRaw = String(formData.get("help_amount") ?? "").trim();
       const helpQuantityRaw = String(formData.get("help_quantity") ?? "").trim();
+      const splitMode = getSharedHelpSplitMode();
       const note = String(formData.get("note") ?? "").trim();
       const amountValue = parseAmount(helpAmountRaw);
       const quantityValue = parseAmount(helpQuantityRaw || "1") || 1;
@@ -2807,15 +2929,14 @@ window.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const splitAmounts = splitAmountExactly(totalAmount, selectedPersonIds.length);
-      const splitSummary = formatSplitSummary(splitAmounts);
-      const sharedHelpNoteParts = [
-        `Pomoc współdzielona. Łączna kwota: ${formatAmount(totalAmount)}; liczba osób: ${selectedPersonIds.length}; podział: ${splitSummary}.`,
-      ];
-      if (note) {
-        sharedHelpNoteParts.push(`Notatka: ${note}`);
+      const allocationResult = getSharedHelpAllocations(totalAmount, splitMode);
+      if (!allocationResult.isValid) {
+        setSharedHelpMessage(allocationResult.message, "error");
+        return;
       }
-      const sharedHelpNote = sharedHelpNoteParts.join(" ");
+      const allocations = allocationResult.allocations;
+      const splitSummary = formatSplitSummary(allocations.map((allocation) => allocation.amount));
+      const totalStayDays = allocations.reduce((sum, allocation) => sum + (allocation.stayDays ?? 0), 0);
       const db = await getDb();
       const selectedPersons = await db.select<Person[]>(
         `SELECT id, first_name, last_name, eligible_person_designation, release_date, assistance_extension_approved
@@ -2831,6 +2952,22 @@ window.addEventListener("DOMContentLoaded", () => {
           return `${fullName}: ${result.message}`;
         })
         .filter((value): value is string => Boolean(value));
+      if (splitMode === "stay") {
+        const personsById = new Map(selectedPersons.map((person) => [person.id, person]));
+        allocations.forEach((allocation) => {
+          const person = personsById.get(allocation.personId);
+          if (!person || !allocation.stayFrom || !allocation.stayTo) return;
+          const fromResult = validateHelpDateForPerson(allocation.stayFrom, person);
+          const toResult = validateHelpDateForPerson(allocation.stayTo, person);
+          const fullName = `${person.first_name ?? ""} ${person.last_name ?? ""}`.trim() || `ID ${person.id}`;
+          if (!fromResult.isValid) {
+            invalidPersons.push(`${fullName}: początek pobytu - ${fromResult.message}`);
+          }
+          if (!toResult.isValid) {
+            invalidPersons.push(`${fullName}: koniec pobytu - ${toResult.message}`);
+          }
+        });
+      }
       if (invalidPersons.length) {
         setSharedHelpMessage(
           `Nie można zapisać pomocy dla wybranej daty. ${invalidPersons.slice(0, 3).join(" ")}`,
@@ -2838,39 +2975,32 @@ window.addEventListener("DOMContentLoaded", () => {
         );
         return;
       }
-      await ensureHelpTable();
-      for (const [index, personId] of selectedPersonIds.entries()) {
-        const amountUnitPerPerson = splitAmounts[index] / quantityValue;
-        await db.execute(
-          `INSERT INTO person_help_entries (
-            event_uuid, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity, help_provider, note, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-          [
-            createHelpEventUuid(),
-            personId,
-            helpDate,
-            entryDate || null,
-            helpType,
-            selectedTypeLabel || null,
-            amountUnitPerPerson,
-            quantityValue,
-            helpProvider,
-            sharedHelpNote,
-          ]
-        );
-      }
-
-      sharedHelpForm.reset();
-      sharedHelpPeopleList
-        ?.querySelectorAll<HTMLInputElement>("input[name='shared_person_id']")
-        .forEach((input) => {
-          input.checked = false;
-        });
-      updateSharedHelpSummary();
-      setSharedHelpMessage(
-        `Dopisano pomoc do ${selectedPersonIds.length} osób. Podział: ${splitSummary}.`,
-        "success"
-      );
+      const personsById = new Map(selectedPersons.map((person) => [person.id, person]));
+      pendingSharedHelpDraft = {
+        helpDate,
+        entryDate,
+        invoiceNumber,
+        helpType,
+        helpTypeLabel: selectedTypeLabel,
+        helpProvider,
+        quantityValue,
+        totalAmount,
+        selectedCount: selectedPersonIds.length,
+        splitMode,
+        splitSummary,
+        totalStayDays,
+        note,
+        allocations: allocations.map((allocation) => {
+          const person = personsById.get(allocation.personId);
+          return {
+            ...allocation,
+            personName:
+              `${person?.first_name ?? ""} ${person?.last_name ?? ""}`.trim() || `ID ${allocation.personId}`,
+          };
+        }),
+      };
+      renderSharedHelpPreview(pendingSharedHelpDraft);
+      setSharedHelpMessage("Sprawdź podgląd rozliczenia i kliknij Zapisz rozliczenie.", "success");
     });
 
     togglePersonForm?.addEventListener("click", () => {
@@ -3104,6 +3234,99 @@ window.addEventListener("DOMContentLoaded", () => {
       return Number.isFinite(amount) ? amount : 0;
     }
 
+    function clearSharedHelpPreview() {
+      pendingSharedHelpDraft = null;
+      if (sharedHelpPreview) sharedHelpPreview.hidden = true;
+      if (sharedHelpPreviewList) sharedHelpPreviewList.innerHTML = "";
+      if (sharedHelpSavePreview) sharedHelpSavePreview.hidden = true;
+    }
+
+    function renderSharedHelpPreview(draft: SharedHelpDraft) {
+      if (!sharedHelpPreview || !sharedHelpPreviewList || !sharedHelpSavePreview) return;
+      sharedHelpPreviewList.innerHTML = "";
+      draft.allocations.forEach((allocation) => {
+        const row = document.createElement("div");
+        row.className = "table-row shared-preview-row";
+        const period =
+          draft.splitMode === "stay" && allocation.stayFrom && allocation.stayTo
+            ? `${allocation.stayFrom} - ${allocation.stayTo}`
+            : "Równy podział";
+        row.innerHTML = `
+          <span>${escapeHtml(allocation.personName ?? `ID ${allocation.personId}`)}</span>
+          <span>${escapeHtml(period)}</span>
+          <span>${draft.splitMode === "stay" ? String(allocation.stayDays ?? 0) : "-"}</span>
+          <span>${formatAmount(allocation.amount)}</span>
+        `;
+        sharedHelpPreviewList.append(row);
+      });
+      sharedHelpPreview.hidden = false;
+      sharedHelpSavePreview.hidden = false;
+    }
+
+    async function saveSharedHelpDraft(draft: SharedHelpDraft) {
+      const db = await getDb();
+      const settlementUuid = createHelpEventUuid();
+      await ensureHelpTable();
+      for (const allocation of draft.allocations) {
+        const amountUnitPerPerson = allocation.amount / draft.quantityValue;
+        const allocationNoteParts = [
+          `Pomoc współdzielona. ID rozliczenia: ${settlementUuid}; łączna kwota: ${formatAmount(draft.totalAmount)}; liczba osób: ${draft.selectedCount}; podział: ${draft.splitSummary}.`,
+        ];
+        if (draft.invoiceNumber) {
+          allocationNoteParts.push(`Numer faktury/dokumentu: ${draft.invoiceNumber}.`);
+        }
+        if (draft.splitMode === "stay") {
+          allocationNoteParts.push(
+            `Podział proporcjonalny według okresu pobytu: ${allocation.stayFrom} - ${allocation.stayTo}, ${allocation.stayDays} dni z ${draft.totalStayDays}, kwota osoby: ${formatAmount(allocation.amount)}.`
+          );
+        } else {
+          allocationNoteParts.push(`Kwota osoby: ${formatAmount(allocation.amount)}.`);
+        }
+        if (draft.note) {
+          allocationNoteParts.push(`Notatka: ${draft.note}`);
+        }
+        const sharedHelpNote = allocationNoteParts.join(" ");
+        await db.execute(
+          `INSERT INTO person_help_entries (
+            event_uuid, settlement_uuid, invoice_number, stay_from, stay_to, stay_days, person_id, help_date, entry_date, help_type, help_type_label, help_amount, help_quantity, help_provider, note, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          [
+            createHelpEventUuid(),
+            settlementUuid,
+            draft.invoiceNumber || null,
+            allocation.stayFrom || null,
+            allocation.stayTo || null,
+            allocation.stayDays ?? null,
+            allocation.personId,
+            draft.helpDate,
+            draft.entryDate || null,
+            draft.helpType,
+            draft.helpTypeLabel || null,
+            amountUnitPerPerson,
+            draft.quantityValue,
+            draft.helpProvider,
+            sharedHelpNote,
+          ]
+        );
+      }
+
+      sharedHelpForm?.reset();
+      sharedHelpPeopleList
+        ?.querySelectorAll<HTMLInputElement>("input[name='shared_person_id']")
+        .forEach((input) => {
+          input.checked = false;
+        });
+      if (sharedHelpBulkFrom) sharedHelpBulkFrom.value = "";
+      if (sharedHelpBulkTo) sharedHelpBulkTo.value = "";
+      clearSharedHelpPreview();
+      updateSharedHelpStayFieldsVisibility();
+      updateSharedHelpSummary();
+      setSharedHelpMessage(
+        `Dopisano pomoc do ${draft.selectedCount} osób. ID rozliczenia: ${settlementUuid}. Podział: ${draft.splitSummary}.`,
+        "success"
+      );
+    }
+
     function formatAmount(value: number) {
       return `${value.toFixed(2).replace(".", ",")} zł`;
     }
@@ -3118,6 +3341,104 @@ window.addEventListener("DOMContentLoaded", () => {
         const cents = baseCents + (index < remainder ? 1 : 0);
         return cents / 100;
       });
+    }
+
+    function splitAmountByWeights(totalAmount: number, weights: number[]) {
+      const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+      if (totalWeight <= 0) return [];
+      const totalCents = Math.round(totalAmount * 100);
+      const allocations = weights.map((weight, index) => {
+        const exactCents = (totalCents * weight) / totalWeight;
+        const cents = Math.floor(exactCents);
+        return {
+          index,
+          cents,
+          remainder: exactCents - cents,
+        };
+      });
+      let centsLeft = totalCents - allocations.reduce((sum, allocation) => sum + allocation.cents, 0);
+      allocations
+        .slice()
+        .sort((left, right) => right.remainder - left.remainder || left.index - right.index)
+        .forEach((allocation) => {
+          if (centsLeft <= 0) return;
+          allocations[allocation.index].cents += 1;
+          centsLeft -= 1;
+        });
+      return allocations.map((allocation) => allocation.cents / 100);
+    }
+
+    function daysInclusive(fromValue: string, toValue: string) {
+      const from = parseDateInput(fromValue);
+      const to = parseDateInput(toValue);
+      if (!from || !to) return null;
+      const fromUtc = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
+      const toUtc = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
+      if (toUtc < fromUtc) return null;
+      return Math.floor((toUtc - fromUtc) / 86_400_000) + 1;
+    }
+
+    function getSharedHelpAllocations(totalAmount: number, splitMode: SharedHelpSplitMode):
+      | { isValid: true; allocations: SharedHelpAllocation[] }
+      | { isValid: false; message: string } {
+      const selectedRows = getSelectedSharedPersonRows();
+      if (!selectedRows.length) {
+        return { isValid: false, message: "Zaznacz co najmniej jedną osobę." };
+      }
+
+      if (splitMode === "equal") {
+        const amounts = splitAmountExactly(totalAmount, selectedRows.length);
+        return {
+          isValid: true,
+          allocations: selectedRows.map((row, index) => {
+            const checkbox = row.querySelector<HTMLInputElement>("input[name='shared_person_id']");
+            return {
+              personId: Number(checkbox?.value),
+              amount: amounts[index] ?? 0,
+              weight: 1,
+            };
+          }),
+        };
+      }
+
+      const stayRows = selectedRows.map((row) => {
+        const checkbox = row.querySelector<HTMLInputElement>("input[name='shared_person_id']");
+        const from = row.querySelector<HTMLInputElement>("[data-shared-stay-from]")?.value ?? "";
+        const to = row.querySelector<HTMLInputElement>("[data-shared-stay-to]")?.value ?? "";
+        const fullName = row.dataset.fullName ?? "Wybrana osoba";
+        const days = daysInclusive(from, to);
+        return {
+          personId: Number(checkbox?.value),
+          fullName,
+          from,
+          to,
+          days,
+        };
+      });
+
+      const firstInvalid = stayRows.find((row) => {
+        return !row.from || !row.to || !isDateWithinAllowedRange(row.from) || !isDateWithinAllowedRange(row.to) || !row.days;
+      });
+      if (firstInvalid) {
+        return {
+          isValid: false,
+          message: `Uzupełnij prawidłowy okres pobytu dla osoby: ${firstInvalid.fullName}.`,
+        };
+      }
+
+      const weights = stayRows.map((row) => row.days ?? 0);
+      const amounts = splitAmountByWeights(totalAmount, weights);
+      return {
+        isValid: true,
+        allocations: stayRows.map((row, index) => ({
+          personId: row.personId,
+          amount: amounts[index] ?? 0,
+          weight: row.days ?? 0,
+          stayFrom: row.from,
+          stayTo: row.to,
+          stayDays: row.days ?? 0,
+        })),
+      };
     }
 
     function formatSplitSummary(amounts: number[]) {
@@ -3224,20 +3545,44 @@ window.addEventListener("DOMContentLoaded", () => {
         return;
       }
       persons.forEach((person) => {
-        const label = document.createElement("label");
+        const label = document.createElement("div");
         label.className = "shared-person-row";
         const fullName = `${person.first_name ?? ""} ${person.last_name ?? ""}`.trim() || "Bez imienia";
         label.dataset.fullName = fullName;
         label.dataset.pesel = person.pesel ?? "";
         label.innerHTML = `
-          <input type="checkbox" name="shared_person_id" value="${person.id}" />
-          <span>${escapeHtml(fullName)}</span>
+          <label class="shared-person-check">
+            <input type="checkbox" name="shared_person_id" value="${person.id}" />
+            <span>${escapeHtml(fullName)}</span>
+          </label>
           <span>${escapeHtml(person.pesel ?? "-")}</span>
+          <div class="shared-stay-fields" hidden>
+            <label class="field">
+              <span>Od</span>
+              <input type="date" data-shared-stay-from />
+            </label>
+            <label class="field">
+              <span>Do</span>
+              <input type="date" data-shared-stay-to />
+            </label>
+            <div class="shared-stay-output">
+              <span>Dni</span>
+              <output data-shared-stay-days>-</output>
+            </div>
+            <div class="shared-stay-output">
+              <span>Kwota</span>
+              <output data-shared-stay-amount>-</output>
+            </div>
+          </div>
         `;
         sharedHelpPeopleList.append(label);
       });
       applySharedHelpPeopleFilters();
       updateSharedHelpSummary();
+    }
+
+    function getSharedHelpSplitMode(): SharedHelpSplitMode {
+      return sharedHelpSplitModeSelect?.value === "stay" ? "stay" : "equal";
     }
 
     function getSelectedSharedPersonIds() {
@@ -3249,13 +3594,37 @@ window.addEventListener("DOMContentLoaded", () => {
         .filter((value) => Number.isFinite(value) && value > 0);
     }
 
+    function getSelectedSharedPersonRows() {
+      if (!sharedHelpPeopleList) return [];
+      return Array.from(
+        sharedHelpPeopleList.querySelectorAll<HTMLInputElement>("input[name='shared_person_id']:checked")
+      )
+        .map((input) => input.closest<HTMLDivElement>(".shared-person-row"))
+        .filter((row): row is HTMLDivElement => Boolean(row));
+    }
+
+    function updateSharedHelpStayFieldsVisibility() {
+      if (!sharedHelpPeopleList) return;
+      const isStayMode = getSharedHelpSplitMode() === "stay";
+      if (sharedHelpBulkDates) sharedHelpBulkDates.hidden = !isStayMode;
+      sharedHelpPeopleList.querySelectorAll<HTMLDivElement>(".shared-person-row").forEach((row) => {
+        if (row.classList.contains("muted")) return;
+        const checkbox = row.querySelector<HTMLInputElement>("input[name='shared_person_id']");
+        const stayFields = row.querySelector<HTMLDivElement>(".shared-stay-fields");
+        if (!stayFields) return;
+        const shouldShow = isStayMode && Boolean(checkbox?.checked);
+        stayFields.hidden = !shouldShow;
+        row.classList.toggle("with-stay-fields", shouldShow);
+      });
+    }
+
     function applySharedHelpPeopleFilters() {
       if (!sharedHelpPeopleList) return;
       const nameQuery = (sharedHelpFilterName?.value ?? "").trim().toLowerCase();
       const peselQuery = (sharedHelpFilterPesel?.value ?? "").trim().toLowerCase();
-      const matchingRows: HTMLLabelElement[] = [];
+      const matchingRows: HTMLDivElement[] = [];
 
-      sharedHelpPeopleList.querySelectorAll<HTMLLabelElement>(".shared-person-row").forEach((row) => {
+      sharedHelpPeopleList.querySelectorAll<HTMLDivElement>(".shared-person-row").forEach((row) => {
         if (row.classList.contains("muted")) return;
         const fullName = (row.dataset.fullName ?? "").toLowerCase();
         const pesel = (row.dataset.pesel ?? "").toLowerCase();
@@ -3310,13 +3679,36 @@ window.addEventListener("DOMContentLoaded", () => {
         ) || 1;
       const totalAmount = amount * quantity;
       const selectedCount = getSelectedSharedPersonIds().length;
-      const splitSummary = selectedCount > 0 ? formatSplitSummary(splitAmountExactly(totalAmount, selectedCount)) : "-";
+      const splitMode = getSharedHelpSplitMode();
+      const allocationResult =
+        selectedCount > 0 && totalAmount > 0 ? getSharedHelpAllocations(totalAmount, splitMode) : null;
+      const allocations = allocationResult?.isValid ? allocationResult.allocations : [];
+      const splitSummary = allocations.length ? formatSplitSummary(allocations.map((allocation) => allocation.amount)) : "-";
+      const stayDays =
+        splitMode === "stay" && allocations.length
+          ? String(allocations.reduce((sum, allocation) => sum + (allocation.stayDays ?? 0), 0))
+          : "-";
+      const controlAmount = allocations.reduce((sum, allocation) => sum + allocation.amount, 0);
       const summaryTotal = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='total']");
       const summaryPeople = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='people']");
       const summaryPerPerson = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='per-person']");
+      const summaryStayDays = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='stay-days']");
+      const summaryControl = sharedHelpSummary.querySelector<HTMLElement>("[data-summary='control']");
       if (summaryTotal) summaryTotal.textContent = formatAmount(totalAmount);
       if (summaryPeople) summaryPeople.textContent = String(selectedCount);
       if (summaryPerPerson) summaryPerPerson.textContent = splitSummary;
+      if (summaryStayDays) summaryStayDays.textContent = stayDays;
+      if (summaryControl) summaryControl.textContent = formatAmount(controlAmount);
+      getSelectedSharedPersonRows().forEach((row) => {
+        const from = row.querySelector<HTMLInputElement>("[data-shared-stay-from]")?.value ?? "";
+        const to = row.querySelector<HTMLInputElement>("[data-shared-stay-to]")?.value ?? "";
+        const days = daysInclusive(from, to);
+        const allocation = allocations.find((item) => item.personId === Number(row.querySelector<HTMLInputElement>("input[name='shared_person_id']")?.value));
+        const daysOutput = row.querySelector<HTMLOutputElement>("[data-shared-stay-days]");
+        const amountOutput = row.querySelector<HTMLOutputElement>("[data-shared-stay-amount]");
+        if (daysOutput) daysOutput.textContent = days ? `${days} dni` : "-";
+        if (amountOutput) amountOutput.textContent = allocation ? formatAmount(allocation.amount) : "-";
+      });
       if (sharedHelpSelectedCount) {
         sharedHelpSelectedCount.textContent = `Zaznaczono: ${selectedCount}`;
       }
@@ -3877,6 +4269,11 @@ window.addEventListener("DOMContentLoaded", () => {
         help_amount: number | null;
         help_quantity: number | null;
         total_amount: number | null;
+        settlement_uuid: string | null;
+        invoice_number: string | null;
+        stay_from: string | null;
+        stay_to: string | null;
+        stay_days: number | null;
         help_provider: string | null;
         note: string | null;
       };
@@ -3892,6 +4289,11 @@ window.addEventListener("DOMContentLoaded", () => {
           he.help_amount,
           he.help_quantity,
           ROUND(COALESCE(he.help_amount, 0) * COALESCE(he.help_quantity, 1), 2) AS total_amount,
+          he.settlement_uuid,
+          he.invoice_number,
+          he.stay_from,
+          he.stay_to,
+          he.stay_days,
           he.help_provider,
           he.note
          FROM person_help_entries he
@@ -3916,6 +4318,11 @@ window.addEventListener("DOMContentLoaded", () => {
           "Kwota (PLN)",
           "Ilość",
           "Suma (PLN)",
+          "ID rozliczenia",
+          "Numer faktury/dokumentu",
+          "Pobyt od",
+          "Pobyt do",
+          "Dni pobytu",
           "Osoba udzielająca",
           "Notatka",
         ],
@@ -3929,6 +4336,11 @@ window.addEventListener("DOMContentLoaded", () => {
           formatNumber(Number(row.help_amount ?? 0)),
           String(row.help_quantity ?? 0),
           formatNumber(Number(row.total_amount ?? 0)),
+          row.settlement_uuid ?? "-",
+          row.invoice_number ?? "-",
+          row.stay_from ?? "-",
+          row.stay_to ?? "-",
+          row.stay_days != null ? String(row.stay_days) : "-",
           row.help_provider ?? "-",
           row.note ?? "-",
         ]),
